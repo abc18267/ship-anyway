@@ -12,6 +12,7 @@ Live: https://abc18267.github.io/ship-anyway/
 - **I’m stuck** offers a smaller step, a stopping point, or a break. The timer pauses while a dialog is open; cancelling resumes it unless you had already paused it.
 - Focus sessions allow one specific five-minute revision. Meeting the definition of done, saving a next step, and taking a break remain available.
 - Follow-ups are optional, appear after 24 hours, and can be postponed or skipped. Weekly statistics are on their own tab.
+- A small illustrated companion gives a brief nod when you start, holds a bookmark when you save your place, and celebrates finishing once. It stays still while you work. **Setup → Companion appearance** offers gentle animation, still characters, or off; the device’s reduced-motion preference always suppresses character animation. The SVG artwork is included in the page and needs no image downloads.
 - Older tasks are folded away. **Set aside** is reversible through **Bring back**.
 
 ## Data and privacy

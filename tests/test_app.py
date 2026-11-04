@@ -432,6 +432,68 @@ class AppTests(unittest.TestCase):
         expect(self.page.get_by_role('dialog')).not_to_be_visible()
         expect(self.page.get_by_role('button', name='Talk', exact=True)).to_be_visible()
 
+    def test_companion_reactions_are_brief_and_do_not_replay(self):
+        self.page.emulate_media(reduced_motion='no-preference')
+        expect(self.page.locator('#view .companion')).to_have_attribute('data-pose', 'ready')
+        self.start()
+        expect(self.page.locator('#view .companion')).to_have_attribute('data-reaction', 'start')
+        expect(self.page.locator('.buddy-body')).to_have_css('animation-name', 'buddy-nod')
+        expect(self.page.locator('.buddy-body')).to_have_css('animation-iteration-count', '1')
+        self.page.clock.fast_forward(1000)
+        expect(self.page.locator('#view .companion')).not_to_have_attribute('data-reaction', 'start')
+        self.assertEqual(self.page.locator('#view .companion').evaluate('el => el.getAnimations({subtree:true}).length'), 0)
+        self.page.get_by_role('link', name='Week', exact=True).click()
+        self.page.get_by_role('link', name='Now', exact=True).click()
+        self.assertEqual(self.page.locator('#view .companion').evaluate('el => el.getAnimations({subtree:true}).length'), 0)
+        self.save_place()
+        expect(self.page.locator('#view .companion')).to_have_attribute('data-pose', 'saved')
+        expect(self.page.locator('#view .companion .buddy-bookmark')).to_have_count(1)
+        self.page.get_by_role('button', name='Resume for 2 minutes').click()
+        self.page.get_by_role('button', name='Task is done', exact=True).click()
+        expect(self.page.locator('#view .companion')).to_have_attribute('data-pose', 'finished')
+        self.assertTrue(self.state()['tasks'][0]['shipped'])
+
+    def test_companion_preferences_persist_and_off_keeps_controls(self):
+        self.page.get_by_role('link', name='Setup', exact=True).click()
+        self.page.get_by_label('Companion appearance').select_option('still')
+        expect(self.page.get_by_label('Companion appearance')).to_be_focused()
+        self.page.reload()
+        expect(self.page.get_by_label('Companion appearance')).to_have_value('still')
+        self.page.get_by_role('link', name='Now', exact=True).click()
+        self.start()
+        self.assertEqual(self.page.locator('#view .companion').evaluate('el => el.getAnimations({subtree:true}).length'), 0)
+        self.page.get_by_role('link', name='Setup', exact=True).click()
+        self.page.get_by_label('Companion appearance').select_option('off')
+        self.page.get_by_role('link', name='Now', exact=True).click()
+        expect(self.page.locator('#view .companion')).to_have_count(0)
+        self.page.get_by_role('button', name='I’m stuck', exact=True).click()
+        expect(self.page.locator('#overlay .companion')).to_have_count(0)
+        self.page.keyboard.press('Escape')
+        self.save_place()
+        self.page.reload()
+        expect(self.page.locator('#view .companion')).to_have_count(0)
+        self.page.get_by_role('button', name='Resume for 2 minutes').click()
+        self.assertTrue(self.state()['active'])
+
+    def test_device_reduced_motion_keeps_companion_still(self):
+        self.page.emulate_media(reduced_motion='reduce')
+        self.start()
+        self.assertEqual(self.page.locator('#view .companion').evaluate('el => el.getAnimations({subtree:true}).length'), 0)
+        self.page.get_by_role('button', name='Task is done', exact=True).click()
+        self.assertEqual(self.page.locator('#view .companion').evaluate('el => el.getAnimations({subtree:true}).length'), 0)
+        self.page.get_by_role('link', name='Setup', exact=True).click()
+        expect(self.page.locator('.motion-note')).to_be_visible()
+
+    def test_legacy_settings_get_companion_without_losing_tasks(self):
+        self.start()
+        legacy = self.state()
+        del legacy['settings']['companion']
+        self.seed(legacy)
+        expect(self.page.locator('#view .companion')).to_have_attribute('data-motion', 'gentle')
+        expect(self.page.get_by_text('Open the proposal', exact=True)).to_be_visible()
+        self.save_place()
+        self.assertEqual(self.state()['settings']['companion'], 'gentle')
+
 
 if __name__ == '__main__':
     unittest.main()
