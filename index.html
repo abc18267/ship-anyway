@@ -130,6 +130,16 @@ button,summary{min-height:44px}
 select{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:10px 12px;min-height:44px;width:100%}
 select:focus-visible{outline:2px solid var(--go);outline-offset:2px}
 .motion-note{display:none}
+.character-picker{border:0;padding:0;margin:0;min-width:0}
+.character-picker legend{font-size:13px;color:var(--muted);margin-bottom:8px}
+.character-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.character-choice{position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;padding:14px 4px 10px;background:var(--surface);border:1px solid var(--line);border-radius:12px;cursor:pointer;text-align:center;font-size:12px;font-weight:600}
+.character-choice input{position:absolute;top:6px;left:6px;margin:0;accent-color:var(--go)}
+.character-choice:has(input:checked){border-color:var(--go);background:var(--go-soft);box-shadow:inset 0 0 0 1px var(--go)}
+.character-choice:has(input:focus-visible){outline:2px solid var(--go);outline-offset:3px}
+.character-choice .companion{width:74px;height:80px}
+.sound-volume{width:100%;accent-color:var(--go);margin:8px 0;min-height:24px}
+@media(max-width:420px){.character-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:360px){.companion-action{grid-template-columns:60px minmax(0,1fr);gap:8px}.companion{width:60px;height:76px}}
 @media(prefers-reduced-motion:no-preference){
   .companion[data-motion="gentle"][data-reaction="start"] .buddy-body{animation:buddy-nod .85s ease-in-out both;animation-delay:var(--reaction-delay,0s)}
@@ -182,12 +192,14 @@ function fmtDate(key){const d=new Date(dayStart(key));return d.toLocaleDateStrin
 function median(a){if(!a.length)return null;const s=[...a].sort((x,y)=>x-y);const m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2;}
 function fmtMin(m){if(m==null)return '–';if(m<60)return Math.round(m)+' min';return (m/60).toFixed(1)+' h';}
 function relDay(t){const k=dayKey(t);if(k===today())return 'today';if(k===dayKey(Date.now()-DAY))return 'yesterday';return 'on '+fmtDate(k);}
+const CHARACTERS={mint:'Mint buddy',bear:'Honey bear',owl:'Lavender owl',sprout:'Little sprout'};
+const SOUNDS={chime:'Soft chime',bell:'Warm bell',drops:'Raindrops',rise:'Gentle rise',silent:'Silent'};
 const DONE_PRESETS=['A first draft exists.','It has been sent to one person.','It is good enough to stop.'];
 
 function defaults(){
   const t=Date.now();
   return {v:1,updated:t,tasks:[],events:[],active:null,
-    settings:{companion:'gentle',cap:25,done:'A version exists that another person could look at.',exercise:20,
+    settings:{companion:'gentle',character:'mint',sound:'chime',volume:0.5,cap:25,done:'A version exists that another person could look at.',exercise:20,
       start:today(),review:dayKey(t+90*DAY),triggers:{},risk:{}}};
 }
 // Keep the v1 storage key so existing tasks and sessions survive this release.
@@ -218,6 +230,7 @@ function readState(raw){
   const d=defaults();
   const settings={...d.settings,...p.settings};
   if(!mins(settings.cap)||!Number.isFinite(settings.exercise)||settings.exercise<5||settings.exercise>60||typeof settings.done!=='string'||!date(settings.start)||!date(settings.review)||!obj(settings.triggers)||!obj(settings.risk))throw Error('Invalid settings in backup.');
+  if(!Object.hasOwn(CHARACTERS,settings.character)||!Object.hasOwn(SOUNDS,settings.sound)||!Number.isFinite(settings.volume)||settings.volume<0||settings.volume>1)throw Error('Invalid character or sound setting.');
   if(!['gentle','still','off'].includes(settings.companion))throw Error('Invalid companion setting.');
   if(p.active!=null){
     const a=p.active,t=p.tasks.find(t=>t.id===a.taskId);
@@ -310,27 +323,36 @@ function reactCompanion(kind){
   clearTimeout(companionTimer);companionMoment={kind,at:Date.now()};
   companionTimer=setTimeout(()=>document.querySelectorAll('.companion').forEach(el=>el.removeAttribute('data-reaction')),900);
 }
-function companion(pose='ready'){
-  if(S.settings.companion==='off')return '';
+function companion(pose='ready',character=S.settings.character,preview=false){
+  if(S.settings.companion==='off'&&!preview)return '';
   const elapsed=companionMoment?Math.max(0,Date.now()-companionMoment.at):900;
   const kind=companionMoment?.kind;
-  const reaction=elapsed<850&&((kind==='start'&&pose==='focus')||kind===pose)?kind:'';
+  const reaction=!preview&&elapsed<850&&((kind==='start'&&pose==='focus')||kind===pose)?kind:'';
   const book=pose==='saved',happy=pose==='finished';
-  return `<span class="companion" data-pose="${pose}" data-motion="${S.settings.companion}" ${reaction?`data-reaction="${reaction}" style="--reaction-delay:-${elapsed}ms"`:''} aria-hidden="true">
+  const palette={mint:['#ACDCC7','#28564D','#D7EBD5','#86BFAA'],bear:['#E9BF80','#6F4E35','#F9E3BA','#C59B61'],owl:['#C6B5E3','#544469','#EDE3F4','#A895C4'],sprout:['#BDDA96','#47633C','#E5EFCB','#99BC75']}[character];
+  const [coat,ink,belly,feet]=palette;
+  const body={
+    mint:'<path d="M28 83C22 74 24 54 30 44c-3-11-1-23 6-24 7-1 12 8 15 15 5-1 9-1 14 0 4-9 10-15 16-11 5 3 4 13 2 20 8 8 12 20 10 33-2 16-18 20-34 20-15 0-25-3-31-14Z" fill="'+coat+'"/><path d="M34 35c-1-7 0-9 2-9 3 0 5 4 7 9M71 36c3-5 5-7 7-6 1 1 1 4 0 7" fill="none" stroke="#DDF0DE" stroke-width="4"/>',
+    bear:'<circle cx="31" cy="34" r="12" fill="'+coat+'"/><circle cx="81" cy="34" r="12" fill="'+coat+'"/><circle cx="31" cy="34" r="6" fill="'+belly+'" stroke="none"/><circle cx="81" cy="34" r="6" fill="'+belly+'" stroke="none"/><path d="M24 69c0-24 12-36 32-36s35 13 35 37c0 19-15 27-34 27S24 88 24 69Z" fill="'+coat+'"/>',
+    owl:'<path d="M24 73c-1-15 6-24 6-42l16 9c7-3 14-3 21 0l16-9c0 18 9 28 8 43-1 17-15 23-34 23S25 90 24 73Z" fill="'+coat+'"/><path d="M30 68q-8 8-3 18l10-8m48-10q8 8 3 18l-10-8" fill="'+feet+'"/>',
+    sprout:'<path d="M57 39q-2-12 2-19" fill="none" stroke="#527845" stroke-width="3"/><path d="M58 29C42 30 35 19 36 12c13-1 24 5 22 17Z" fill="#82B56E"/><path d="M58 24C58 12 70 9 79 12c-2 10-10 16-21 12Z" fill="#A8CD7D"/><path d="M23 72c-1-21 13-35 33-35 22 0 36 14 36 35 0 17-14 25-35 25-20 0-33-8-34-25Z" fill="'+coat+'"/>'
+  }[character];
+  return `<span class="companion" data-pose="${pose}" data-character="${character}" data-motion="${preview?'still':S.settings.companion}" ${reaction?`data-reaction="${reaction}" style="--reaction-delay:-${elapsed}ms"`:''} aria-hidden="true">
     <svg viewBox="0 0 112 112" xmlns="http://www.w3.org/2000/svg" focusable="false">
       <ellipse cx="56" cy="99" rx="33" ry="5" fill="var(--ink)" opacity=".07"/>
       <path d="M12 67C7 42 27 15 58 16c29 1 46 20 44 45-2 26-24 36-47 36S17 89 12 67Z" fill="var(--go)" opacity=".07"/>
       ${happy?`<g class="buddy-stars" fill="#E7B85F" stroke="#8F692D" stroke-width="1.2" stroke-linejoin="round"><path d="m14 36 2.2 5.8L22 44l-5.8 2.2L14 52l-2.2-5.8L6 44l5.8-2.2Z"/><path d="m96 20 1.8 4.2L102 26l-4.2 1.8L96 32l-1.8-4.2L90 26l4.2-1.8Z"/><circle cx="100" cy="61" r="2"/></g>`:''}
-      <g class="buddy-body" stroke="#28564D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-        <ellipse cx="40" cy="94" rx="9" ry="4" fill="#86BFAA"/>
-        <ellipse cx="73" cy="94" rx="9" ry="4" fill="#86BFAA"/>
-        <path d="M28 83C22 74 24 54 30 44c-3-11-1-23 6-24 7-1 12 8 15 15 5-1 9-1 14 0 4-9 10-15 16-11 5 3 4 13 2 20 8 8 12 20 10 33-2 16-18 20-34 20-15 0-25-3-31-14Z" fill="#ACDCC7"/>
-        <path d="M34 35c-1-7 0-9 2-9 3 0 5 4 7 9M71 36c3-5 5-7 7-6 1 1 1 4 0 7" fill="none" stroke="#DDF0DE" stroke-width="4"/>
-        <ellipse cx="58" cy="81" rx="20" ry="11" fill="#D7EBD5" stroke="none"/>
+      <g class="buddy-body" stroke="${ink}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <ellipse cx="40" cy="94" rx="9" ry="4" fill="${feet}"/>
+        <ellipse cx="73" cy="94" rx="9" ry="4" fill="${feet}"/>
+        ${body}
+        <ellipse cx="58" cy="81" rx="20" ry="11" fill="${belly}" stroke="none"/>
+        ${character==='owl'?`<path d="M33 55c0-12 16-14 24-5 8-9 24-7 24 5 0 13-15 18-24 11-9 7-24 2-24-11Z" fill="${belly}" stroke="none"/>`:character==='bear'?`<ellipse cx="58" cy="67" rx="10" ry="8" fill="${belly}" stroke="none"/>`:''}
         <ellipse cx="38" cy="66" rx="6" ry="3.3" fill="#EDB2A2" stroke="none"/>
         <ellipse cx="77" cy="66" rx="6" ry="3.3" fill="#EDB2A2" stroke="none"/>
-        ${happy?'<path d="M43 57q4-5 8 0m13 0q4-5 8 0" fill="none"/><path d="M53 66q5 2 10 0c-1 8-9 8-10 0Z" fill="#28564D"/>':'<ellipse cx="47" cy="57" rx="2.6" ry="3.5" fill="#28564D" stroke="none"/><ellipse cx="68" cy="57" rx="2.6" ry="3.5" fill="#28564D" stroke="none"/><path d="M53 67q5 5 10 0" fill="none"/>'}
-        ${book?`<path d="M39 78q8-4 18 0 9-4 18 0v15q-9-3-18 0-9-3-18 0Z" fill="#FFF3D8"/><path d="M57 79v14" fill="none"/><path class="buddy-bookmark" d="M62 76h7v14l-3.5-2.5L62 90Z" fill="#E8B65E" stroke="#A47D37" stroke-width="1.3"/><path d="M30 77q-4 10 9 9m46-9q5 10-9 9" fill="#ACDCC7"/>`:happy?'<path d="M29 72q-11-2-13-10m72 8q11-3 12-13" fill="none"/>':'<path d="M30 72q-5 8 3 10m51-10q5 8-3 10" fill="none"/>'}
+        ${happy?`<path d="M43 57q4-5 8 0m13 0q4-5 8 0" fill="none"/><path d="M53 66q5 2 10 0c-1 8-9 8-10 0Z" fill="${ink}"/>`:`<ellipse cx="47" cy="57" rx="2.6" ry="3.5" fill="${ink}" stroke="none"/><ellipse cx="68" cy="57" rx="2.6" ry="3.5" fill="${ink}" stroke="none"/><path d="M53 67q5 5 10 0" fill="none"/>`}
+        ${character==='owl'?'<path d="m54 62 4 5 4-5-4-2Z" fill="#E2AF65" stroke="none"/>':character==='bear'?`<path d="M55 64q3-2 6 0-3 5-6 0Z" fill="${ink}" stroke="none"/>`:''}
+        ${book?`<path d="M39 78q8-4 18 0 9-4 18 0v15q-9-3-18 0-9-3-18 0Z" fill="#FFF3D8"/><path d="M57 79v14" fill="none"/><path class="buddy-bookmark" d="M62 76h7v14l-3.5-2.5L62 90Z" fill="#E8B65E" stroke="#A47D37" stroke-width="1.3"/><path d="M30 77q-4 10 9 9m46-9q5 10-9 9" fill="${coat}"/>`:happy?'<path d="M29 72q-11-2-13-10m72 8q11-3 12-13" fill="none"/>':'<path d="M30 72q-5 8 3 10m51-10q5 8-3 10" fill="none"/>'}
       </g>
     </svg></span>`;
 }
@@ -479,12 +501,24 @@ function renderSetup(){
   </div></section>
   <section><h2>A little company</h2><div class="card stack">
     <p class="small muted" style="margin:0">A quiet companion for starting, saving your place, and finishing. Reactions play once; the character stays still while you work.</p>
+    <fieldset class="character-picker"><legend>Choose your companion</legend><div class="character-grid">
+      ${Object.entries(CHARACTERS).map(([id,name])=>`<label class="character-choice"><input type="radio" name="character" value="${id}" ${s.character===id?'checked':''}>${companion('ready',id,true)}<span>${name}</span></label>`).join('')}
+    </div></fieldset>
     <label class="f">Companion appearance<select id="s-companion">
       <option value="gentle" ${s.companion==='gentle'?'selected':''}>Gentle animation</option>
       <option value="still" ${s.companion==='still'?'selected':''}>Still characters</option>
       <option value="off" ${s.companion==='off'?'selected':''}>Off</option>
     </select></label>
     <p class="small muted motion-note" style="margin:0">Your device’s reduced-motion setting keeps the character still.</p>
+  </div></section>
+  <section><h2>Timer sound</h2><div class="card stack">
+    <p class="small muted" style="margin:0">A short sound when your two-minute start, focus session, or movement break ends.</p>
+    <label class="f" for="s-sound">Sound</label>
+    <select id="s-sound">${Object.entries(SOUNDS).map(([id,name])=>`<option value="${id}" ${s.sound===id?'selected':''}>${name}</option>`).join('')}</select>
+    <label class="row small" for="s-volume" style="justify-content:space-between">Volume <span id="volume-label">${Math.round(s.volume*100)}%</span></label>
+    <input class="sound-volume" type="range" id="s-volume" min="0" max="100" step="5" value="${Math.round(s.volume*100)}" aria-valuetext="${Math.round(s.volume*100)} percent">
+    <button data-action="preview-sound" ${s.sound==='silent'||s.volume===0?'disabled':''}>Preview sound</button>
+    <p class="small muted" style="margin:0">${s.sound==='silent'||s.volume===0?'Sound is off. The timer still shows when your time is up.':'Preview plays at the selected volume. Your device’s sound settings also apply.'}</p>
   </div></section>
   <section><h2>Reminders</h2><div class="card stack">
     <p class="small muted" style="margin:0">A website can’t ring your phone on its own. These open a prefilled Google Calendar event; save it once and Calendar’s own notification does the reminding. Nothing is sent from this page.</p>
@@ -511,13 +545,50 @@ function renderSetup(){
 
 /* ---------- timer, chime, wake lock ---------- */
 let timer=null,audio=null,wake=null,chimed=null;
-function chime(){
-  try{audio=audio||new (window.AudioContext||window.webkitAudioContext)();
-    const t=audio.currentTime;[0,0.35,0.7].forEach((d,i)=>{const o=audio.createOscillator(),g=audio.createGain();o.type='sine';o.frequency.value=i===2?880:660;
-      g.gain.setValueAtTime(0.0001,t+d);g.gain.exponentialRampToValueAtTime(0.25,t+d+0.02);g.gain.exponentialRampToValueAtTime(0.0001,t+d+0.3);
-      o.connect(g).connect(audio.destination);o.start(t+d);o.stop(t+d+0.32);});}catch(e){}
+const soundNodes=new Set();let soundGeneration=0;
+function stopSound(){
+  soundGeneration++;
+  for(const {o,g} of soundNodes){try{o.stop();}catch(e){}o.disconnect();g.disconnect();}
+  soundNodes.clear();
 }
-function primeAudio(){try{audio=audio||new (window.AudioContext||window.webkitAudioContext)();audio.resume&&audio.resume();}catch(e){}}
+function audioContext(){
+  if(!audio||audio.state==='closed')audio=new (window.AudioContext||window.webkitAudioContext)();
+  return audio;
+}
+async function chime(preview=false){
+  stopSound();
+  const sound=S.settings.sound,volume=S.settings.volume,generation=soundGeneration;
+  if(sound==='silent'||volume===0)return;
+  try{
+    const ctx=audioContext();
+    if(ctx.state==='suspended')await ctx.resume();
+    if(generation!==soundGeneration)return;
+    if(ctx.state!=='running')throw Error('Audio unavailable');
+    const t=ctx.currentTime+.015;
+    function note(freq,delay,duration,level=.25,endFreq=null){
+      const o=ctx.createOscillator(),g=ctx.createGain(),nodes={o,g};soundNodes.add(nodes);
+      o.type='sine';o.frequency.setValueAtTime(freq,t+delay);
+      if(endFreq)o.frequency.exponentialRampToValueAtTime(endFreq,t+delay+duration);
+      g.gain.setValueAtTime(.0001,t+delay);
+      g.gain.exponentialRampToValueAtTime(Math.max(.0001,level*volume),t+delay+.015);
+      g.gain.exponentialRampToValueAtTime(.0001,t+delay+duration);
+      o.connect(g);g.connect(ctx.destination);
+      o.onended=()=>{o.disconnect();g.disconnect();soundNodes.delete(nodes);};
+      o.start(t+delay);o.stop(t+delay+duration+.02);
+    }
+    if(sound==='chime')[660,660,880].forEach((f,i)=>note(f,i*.35,.3));
+    else if(sound==='bell')[[523.25,0],[659.25,.5]].forEach(([f,d])=>{
+      note(f,d,1.3,.22);note(f*2,d,.8,.055);note(f*3,d,.4,.022);
+    });
+    else if(sound==='drops')[880,1046.5,783.99].forEach((f,i)=>note(f,i*.28,.22,.23,f*.5));
+    else if(sound==='rise')[523.25,659.25,783.99].forEach((f,i)=>note(f,i*.22,.55,.18));
+    if(preview)toast('Playing '+SOUNDS[sound].toLowerCase()+'.');
+  }catch(e){if(preview)toast('Couldn’t play audio. Check your browser’s sound permissions and device volume.');}
+}
+function primeAudio(){
+  if(S.settings.sound==='silent'||S.settings.volume===0)return;
+  try{const ctx=audioContext();if(ctx.state==='suspended')ctx.resume().catch(()=>{});}catch(e){}
+}
 async function lockScreen(on){
   try{if(on&&!wake&&navigator.wakeLock){wake=await navigator.wakeLock.request('screen');wake.addEventListener('release',()=>{wake=null;});}
     else if(!on&&wake){await wake.release();wake=null;}}catch(e){wake=null;}
@@ -623,6 +694,7 @@ function handle(act,b){
   }
   else if(act==='closeov'){pendingRestore=null;closeDialog();}
   else if(act==='voicehelp'){showVoiceHelp();}
+  else if(act==='preview-sound'){chime(true);}
   else if(act==='copy'){copy(checkinText());}
   else if(act==='export'){exportData();}
   else if(act==='export-original'&&protectedRaw!==null){download(protectedRaw,'ship-anyway-original.json');}
@@ -773,6 +845,9 @@ document.addEventListener('change',e=>{
   if(el.id==='restore-file'){prepareRestore(el.files[0]);el.value='';return;}
   if(el.id==='s-cap'){s.cap=Math.max(1,Math.min(240,+el.value||25));capPick=s.cap;}
   else if(el.id==='s-companion'){s.companion=el.value;companionMoment=null;clearTimeout(companionTimer);}
+  else if(el.name==='character'){s.character=el.value;companionMoment=null;}
+  else if(el.id==='s-sound'){s.sound=el.value;stopSound();}
+  else if(el.id==='s-volume'){s.volume=Math.max(0,Math.min(1,+el.value/100));stopSound();}
   else if(el.id==='s-ex')s.exercise=Math.max(5,Math.min(60,+el.value||20));
   else if(el.id==='s-done')s.done=el.value.trim()||s.done;
   else if(el.id==='s-start'&&el.value)s.start=el.value;
@@ -783,7 +858,13 @@ document.addEventListener('change',e=>{
   else if(el.dataset.risk){s.risk[el.dataset.risk]=el.checked;}
   else return;
   save();
-  if(el.id==='s-companion')$('#s-companion')?.focus();
+  if(['s-companion','s-sound','s-volume'].includes(el.id))document.getElementById(el.id)?.focus();
+  if(el.name==='character')document.querySelector(`input[name="character"][value="${S.settings.character}"]`)?.focus();
+});
+document.addEventListener('input',e=>{
+  if(e.target.id==='s-volume'){
+    const value=e.target.value;$('#volume-label').textContent=value+'%';e.target.setAttribute('aria-valuetext',value+' percent');
+  }
 });
 let dialogReturnFocus=null,dialogPausedSession=null;
 function showDialog(label,content){

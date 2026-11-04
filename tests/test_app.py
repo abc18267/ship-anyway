@@ -494,6 +494,122 @@ class AppTests(unittest.TestCase):
         self.save_place()
         self.assertEqual(self.state()['settings']['companion'], 'gentle')
 
+    def test_character_choices_persist_and_share_saved_pose(self):
+        self.page.emulate_media(reduced_motion='reduce')
+        for character, name in [('mint','Mint buddy'),('bear','Honey bear'),('owl','Lavender owl'),('sprout','Little sprout')]:
+            self.page.get_by_role('link', name='Setup', exact=True).click()
+            self.page.get_by_role('radio', name=name, exact=True).click()
+            expect(self.page.get_by_role('radio', name=name, exact=True)).to_be_focused()
+            self.page.reload()
+            expect(self.page.get_by_role('radio', name=name, exact=True)).to_be_checked()
+            self.page.get_by_role('link', name='Now', exact=True).click()
+            expect(self.page.locator('#startform')).to_be_visible()
+            expect(self.page.locator('#view .companion')).to_have_attribute('data-character', character)
+            self.start(name+' task')
+            self.save_place()
+            expect(self.page.locator('#view .companion')).to_have_attribute('data-character', character)
+            expect(self.page.locator('#view .buddy-bookmark')).to_have_count(1)
+            self.assertEqual(self.page.locator('#view .companion').evaluate('el => el.getAnimations({subtree:true}).length'), 0)
+
+    def install_offline_audio(self):
+        # Render the actual synthesis graph without playing sound on the host.
+        self.page.add_init_script("""
+            window.soundContexts = [];
+            window.AudioContext = class {
+                constructor() {
+                    const ctx = new OfflineAudioContext(1, 144000, 48000);
+                    Object.defineProperty(ctx, 'state', {get: () => 'running'});
+                    ctx.oscillatorCount=0;
+                    const create=ctx.createOscillator.bind(ctx);
+                    ctx.createOscillator=()=>{ctx.oscillatorCount++;return create();};
+                    window.soundContexts.push(ctx);
+                    return ctx;
+                }
+            };
+        """)
+        self.page.reload()
+
+    def test_sound_previews_render_audio_without_clipping(self):
+        self.install_offline_audio()
+        energies=[]
+        for sound in ['chime','bell','drops','rise']:
+            self.page.reload()
+            self.page.get_by_role('link', name='Setup', exact=True).click()
+            self.page.get_by_label('Sound', exact=True).select_option(sound)
+            self.page.get_by_role('button', name='Preview sound', exact=True).click()
+            result=self.page.evaluate("""async () => {
+                const buffer=await window.soundContexts[0].startRendering();
+                const data=buffer.getChannelData(0);
+                let peak=0,energy=0,last=0;
+                data.forEach((v,i)=>{peak=Math.max(peak,Math.abs(v));energy+=v*v;if(Math.abs(v)>.0002)last=i;});
+                return {peak,energy,last:last/buffer.sampleRate};
+            }""")
+            self.assertGreater(result['peak'], .02)
+            self.assertLess(result['peak'], .95)
+            self.assertGreater(result['energy'], 1)
+            self.assertLess(result['last'], 2)
+            energies.append(round(result['energy'], 2))
+        self.assertEqual(len(set(energies)), 4)
+
+    def test_sound_settings_backup_silence_and_timer_playback(self):
+        self.install_offline_audio()
+        self.page.get_by_role('link', name='Setup', exact=True).click()
+        self.page.get_by_label('Sound', exact=True).select_option('bell')
+        self.page.locator('#s-volume').focus()
+        self.page.locator('#s-volume').press('Home')
+        for _ in range(5):
+            self.page.locator('#s-volume').press('ArrowRight')
+        self.page.reload()
+        expect(self.page.get_by_label('Sound', exact=True)).to_have_value('bell')
+        expect(self.page.locator('#s-volume')).to_have_value('25')
+        with self.page.expect_download() as download:
+            self.page.get_by_role('button', name='Download backup', exact=True).click()
+        backup=json.loads(Path(download.value.path()).read_text())
+        self.assertEqual(backup['settings']['sound'], 'bell')
+        self.assertEqual(backup['settings']['volume'], .25)
+        self.page.get_by_role('link', name='Now', exact=True).click()
+        self.start()
+        self.page.clock.fast_forward(121000)
+        self.page.clock.fast_forward(5000)
+        self.assertEqual(self.page.evaluate('window.soundContexts[0].oscillatorCount'), 6)
+        # The timer created a real bell graph. Advancing again must not retrigger it.
+        result=self.page.evaluate("""async () => {
+            const buffer=await window.soundContexts[0].startRendering();
+            const data=buffer.getChannelData(0);
+            return {peak:data.reduce((max,v)=>Math.max(max,Math.abs(v)),0),energy:data.reduce((sum,v)=>sum+v*v,0)};
+        }""")
+        self.assertGreater(result['energy'], 1)
+        self.assertLess(result['peak'], .15)
+        self.save_place()
+        self.page.get_by_role('link', name='Setup', exact=True).click()
+        self.page.get_by_label('Sound', exact=True).select_option('silent')
+        self.page.reload()
+        expect(self.page.get_by_role('button', name='Preview sound', exact=True)).to_be_disabled()
+        self.page.get_by_role('link', name='Now', exact=True).click()
+        self.start('Silent task')
+        self.page.clock.fast_forward(121000)
+        expect(self.page.locator('#clock')).to_have_text('00:00')
+        self.assertEqual(self.page.evaluate('window.soundContexts.length'), 0)
+
+    def test_old_backup_defaults_and_zero_volume(self):
+        self.install_offline_audio()
+        self.start()
+        legacy=self.state()
+        for setting in ['sound','volume','character']:
+            del legacy['settings'][setting]
+        legacy['active']=None
+        self.seed(legacy)
+        self.page.get_by_role('link', name='Setup', exact=True).click()
+        expect(self.page.get_by_label('Sound', exact=True)).to_have_value('chime')
+        expect(self.page.get_by_role('radio', name='Mint buddy')).to_be_checked()
+        self.page.locator('#s-volume').focus()
+        self.page.locator('#s-volume').press('Home')
+        expect(self.page.get_by_role('button', name='Preview sound', exact=True)).to_be_disabled()
+        self.page.get_by_role('link', name='Now', exact=True).click()
+        self.start('Quiet work')
+        self.page.clock.fast_forward(121000)
+        self.assertEqual(self.page.evaluate('window.soundContexts.length'), 0)
+
 
 if __name__ == '__main__':
     unittest.main()

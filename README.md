@@ -13,6 +13,8 @@ Live: https://abc18267.github.io/ship-anyway/
 - Focus sessions allow one specific five-minute revision. Meeting the definition of done, saving a next step, and taking a break remain available.
 - Follow-ups are optional, appear after 24 hours, and can be postponed or skipped. Weekly statistics are on their own tab.
 - A small illustrated companion gives a brief nod when you start, holds a bookmark when you save your place, and celebrates finishing once. It stays still while you work. **Setup → Companion appearance** offers gentle animation, still characters, or off; the device’s reduced-motion preference always suppresses character animation. The SVG artwork is included in the page and needs no image downloads.
+- Choose **Mint buddy**, **Honey bear**, **Lavender owl**, or **Little sprout** from the illustrated picker in Setup. Every character has the same gentle reactions and motion controls.
+- **Setup → Timer sound** offers Soft chime, Warm bell, Raindrops, Gentle rise, or Silent, with volume control and a preview button. Sounds are synthesized in the browser, need no downloads, and play once when a timer ends. Previews replace any sound already playing. Character, sound, and volume choices are included in backups.
 - Older tasks are folded away. **Set aside** is reversible through **Bring back**.
 
 ## Data and privacy
