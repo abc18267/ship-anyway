@@ -369,6 +369,69 @@ class AppTests(unittest.TestCase):
         self.assertEqual(self.state()['tasks'][0]['cap'], 15)
         expect(self.page.get_by_role('button', name='Talk', exact=True)).to_be_visible()
 
+    def mock_voice(self, availability='available', install_success=True):
+        self.page.add_init_script("""
+            window.voiceAvailability = %s;
+            window.voiceInstallSuccess = %s;
+            window.SpeechRecognition = class {
+                constructor() { window.testRecognition = this; }
+                static async available(options) {
+                    window.lastAvailabilityOptions = options;
+                    return window.voiceAvailability;
+                }
+                static async install(options) {
+                    window.lastInstallOptions = options;
+                    if (window.voiceInstallSuccess) window.voiceAvailability = 'available';
+                    return window.voiceInstallSuccess;
+                }
+                start() { this.onstart(); }
+                stop() { this.onend(); }
+            };
+        """ % (json.dumps(availability), json.dumps(install_success)))
+        self.page.reload()
+
+    def test_network_error_offers_on_device_recovery(self):
+        self.mock_voice()
+        self.page.get_by_role('button', name='Talk', exact=True).click()
+        self.page.get_by_role('button', name='Enable voice & listen').click()
+        self.page.evaluate("window.testRecognition.onerror({error:'network'})")
+        expect(self.page.get_by_role('dialog')).to_contain_text('Couldn’t connect to voice recognition')
+        self.page.get_by_role('button', name='Set up on-device voice').click()
+        self.page.get_by_role('button', name='Use on-device voice', exact=True).click()
+        self.assertTrue(self.page.evaluate('window.testRecognition.processLocally'))
+        self.assertEqual(self.state()['settings']['voiceMode'], 'local')
+        self.assertTrue(self.page.evaluate('window.lastAvailabilityOptions.processLocally'))
+        self.page.evaluate("window.testRecognition.onresult({results: [[{transcript:'start the proposal'}]]})")
+        self.assertEqual(self.state()['tasks'][0]['title'], 'The proposal')
+
+    def test_local_voice_download_and_install(self):
+        self.mock_voice('downloadable')
+        self.page.get_by_role('button', name='Talk', exact=True).click()
+        self.page.get_by_role('button', name='Set up on-device voice').click()
+        self.page.get_by_role('button', name='Download English voice pack').click()
+        self.page.get_by_role('button', name='Use on-device voice', exact=True).click()
+        self.assertEqual(self.page.evaluate('window.lastInstallOptions.langs'), ['en-US'])
+        self.assertTrue(self.page.evaluate('window.testRecognition.processLocally'))
+
+    def test_local_voice_install_failure_is_recoverable(self):
+        self.mock_voice('downloadable', False)
+        self.page.get_by_role('button', name='Talk', exact=True).click()
+        self.page.get_by_role('button', name='Set up on-device voice').click()
+        self.page.get_by_role('button', name='Download English voice pack').click()
+        expect(self.page.get_by_role('dialog')).to_contain_text('could not install')
+        self.page.get_by_role('button', name='Use buttons for now').click()
+        self.start()
+
+    def test_cancel_local_voice_check_does_not_reopen_dialog(self):
+        self.mock_voice()
+        self.page.evaluate("() => { window.SpeechRecognition.available = () => new Promise(resolve => { window.completeVoiceCheck = resolve; }); }")
+        self.page.get_by_role('button', name='Talk', exact=True).click()
+        self.page.get_by_role('button', name='Set up on-device voice').click()
+        self.page.keyboard.press('Escape')
+        self.page.evaluate("window.completeVoiceCheck('available')")
+        expect(self.page.get_by_role('dialog')).not_to_be_visible()
+        expect(self.page.get_by_role('button', name='Talk', exact=True)).to_be_visible()
+
 
 if __name__ == '__main__':
     unittest.main()

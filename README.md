@@ -22,7 +22,9 @@ Use **Setup → Download backup** to keep a JSON copy. **Restore backup** valida
 
 Storage failures produce a persistent warning with a backup button. Unreadable existing data is protected from overwriting and can be downloaded separately. Export cannot recover information already removed by older app versions or browser data clearing.
 
-Voice input is optional and has a notice before first use. The browser may send audio to its speech recognition provider; recognition is not guaranteed to work offline or in every browser. The app loads fonts from Google Fonts, with system-font fallbacks.
+Voice input is optional and has a notice before first use. The browser may send audio to its speech recognition provider; recognition is not guaranteed to work offline or in every browser. In browsers that support on-device speech recognition, Talk offers an English language-pack check and optional download. Selecting on-device voice sets `processLocally` and never silently switches back to online recognition. Network and microphone errors have a recovery dialog. The Talk button remains visible in unsupported browsers and explains how to move to a supported browser.
+
+The app loads fonts from Google Fonts, with system-font fallbacks.
 
 ## Development and verification
 

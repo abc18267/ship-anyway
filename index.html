@@ -490,7 +490,12 @@ function handle(act,b){
   const id=b.dataset.id,now=Date.now();
   if(['skipex','morepass','revision-start','pause','ship','stop','saveplace','continuework'].includes(act)&&!S.active)return;
   if(act==='talk'){if(!SR)showVoiceUnavailable();else if(S.settings.voiceConsent)listen();else showVoiceConsent();}
-  else if(act==='voice-enable'){S.settings.voiceConsent=true;closeDialog();save();listen();}
+  else if(act==='voice-enable'||act==='voice-local-use'){
+    S.settings.voiceConsent=true;S.settings.voiceMode=act==='voice-local-use'?'local':'online';closeDialog();save();listen();
+  }
+  else if(act==='voice-retry'){closeDialog();listen();}
+  else if(act==='voice-local-check'){prepareLocalVoice(false);}
+  else if(act==='voice-local-install'){prepareLocalVoice(true);}
   else if(act==='plan'){
     const t=newTask(($('#t-title')?.value||'').trim()||'Take one small step');
     t.done=($('#t-done')?.value||'').trim()||S.settings.done;t.cap=capPick;t.planned=b.dataset.day;
@@ -561,23 +566,63 @@ function newTask(title){return {id:uid(),title,done:S.settings.done,cap:S.settin
 
 /* ---------- voice: optional browser-provider recognition ---------- */
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-let rec=null,listening=false;
+let rec=null,listening=false,voiceSetupEpoch=0;
+const VOICE_LANG='en-US';
+const localVoiceSupported=()=>!!SR&&typeof SR.available==='function'&&typeof SR.install==='function';
 function speak(t){try{if(!window.speechSynthesis)return;speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.rate=1.05;speechSynthesis.speak(u);}catch(e){}}
 function listen(){
   if(!SR){showVoiceUnavailable();return;}
   if(listening){try{rec.stop();}catch(e){}return;}
   primeAudio();
-  rec=new SR();rec.lang=navigator.language||'en-US';rec.interimResults=false;rec.maxAlternatives=3;
+  const current=new SR();rec=current;
+  current.lang=VOICE_LANG;current.interimResults=false;current.maxAlternatives=3;
+  if(S.settings.voiceMode==='local'){
+    if(!localVoiceSupported()){showVoiceFailure('local-unavailable');return;}
+    current.processLocally=true;
+  }
   const btn=$('#talk');
-  rec.onstart=()=>{listening=true;btn.textContent='Listening…';btn.classList.add('live');};
-  rec.onend=()=>{listening=false;btn.textContent='Talk';btn.classList.remove('live');};
-  rec.onerror=e=>{listening=false;btn.textContent='Talk';btn.classList.remove('live');
-    toast(e.error==='not-allowed'?'Microphone blocked. You can allow it in your browser settings or use the buttons.':e.error==='no-speech'?'Heard nothing.':'Voice error: '+e.error);};
-  rec.onresult=e=>{const alts=[...e.results[0]].map(r=>r.transcript.trim());let reply=null;
+  const idle=()=>{if(rec!==current)return;listening=false;btn.textContent='Talk';btn.classList.remove('live');};
+  current.onstart=()=>{if(rec!==current)return;listening=true;btn.textContent='Listening…';btn.classList.add('live');};
+  current.onend=idle;
+  current.onerror=e=>{if(rec!==current)return;idle();if(e.error!=='aborted')showVoiceFailure(e.error);};
+  current.onresult=e=>{if(rec!==current)return;const alts=[...e.results[0]].map(r=>r.transcript.trim());let reply=null;
     for(const a of alts){reply=command(a);if(reply!==null){toast('“'+a+'”');break;}}
     if(reply===null){reply='I didn’t catch a command. Try: start, ship it, pause, spiraling.';toast('“'+alts[0]+'” — not a command');}
     speak(reply);};
-  try{rec.start();}catch(e){toast('Could not start the microphone.');}
+  try{current.start();}catch(e){idle();showVoiceFailure(e.name==='NotAllowedError'?'not-allowed':'start-failed');}
+}
+function showVoiceFailure(error){
+  const messages={
+    network:['Couldn’t connect to voice recognition','The browser’s online speech service could not complete the connection. Your tasks are still here.'],
+    'not-allowed':['Microphone access is blocked','Allow microphone access for this site in your browser’s site settings, then try again.'],
+    'service-not-allowed':['Voice recognition is blocked','This browser or its settings are preventing access to the speech service.'],
+    'audio-capture':['Couldn’t access a microphone','Check that a microphone is connected and selected in your browser’s microphone settings.'],
+    'no-speech':['No speech was heard','Try again and speak after the button says “Listening…”.'],
+    'language-not-supported':['The voice language isn’t ready','The English voice pack may need to be installed or downloaded again.'],
+    'local-unavailable':['On-device voice isn’t available here','This browser doesn’t expose the on-device voice features needed by this app.']
+  };
+  const [title,body]=messages[error]||['Voice couldn’t start','The browser could not start speech recognition. You can retry or use the task buttons.'];
+  const canLocal=localVoiceSupported();
+  showDialog('Voice connection help',`<p class="quote">${esc(title)}</p><p>${esc(body)}</p>
+    ${canLocal?'<p class="small muted">On-device voice can recognize commands without connecting to the online speech service. It may need a one-time English language-pack download.</p><button class="primary" data-action="voice-local-check">Set up on-device voice</button>':error==='network'?'<p class="small muted">This browser doesn’t offer on-device voice here. Try updating Google Chrome. The online speech service may also be unavailable on your network.</p>':''}
+    <button data-action="voice-retry">Try again</button><button class="quiet" data-action="closeov">Use buttons for now</button>`);
+}
+async function prepareLocalVoice(install){
+  if(!localVoiceSupported()){showVoiceFailure('local-unavailable');return;}
+  const run=++voiceSetupEpoch;
+  showDialog('Set up on-device voice',`<p class="quote">${install?'Downloading English voice…':'Checking on-device voice…'}</p><p role="status">${install?'Your browser is downloading its language pack. This may take a few minutes.':'Checking whether the English language pack is ready in this browser.'}</p><button class="quiet" data-action="closeov">Close</button>`);
+  try{
+    if(install){const installed=await SR.install({langs:[VOICE_LANG]});if(run!==voiceSetupEpoch)return;if(!installed)throw Error('The browser could not install the English language pack. You can retry when the download is available.');}
+    const status=await SR.available({langs:[VOICE_LANG],processLocally:true});
+    if(run!==voiceSetupEpoch)return;
+    if(status==='available'){
+      showDialog('On-device voice ready','<p class="quote">On-device voice is ready.</p><p>Commands will be recognized on this device. Audio won’t be sent to the browser’s online speech service.</p><button class="primary" data-action="voice-local-use">Use on-device voice</button><button class="quiet" data-action="closeov">Close</button>');
+    }else if(status==='downloadable'){
+      showDialog('Download English voice',`<p class="quote">Download the English voice pack?</p><p>Your browser needs a one-time language-pack download. After that, recognition can run on this device.</p><button class="primary" data-action="voice-local-install">Download English voice pack</button><button class="quiet" data-action="closeov">Not now</button>`);
+    }else if(status==='downloading'){
+      showDialog('Voice pack downloading','<p class="quote">The voice pack is downloading.</p><p>Your browser is still preparing English voice recognition. Check again in a moment.</p><button data-action="voice-local-check">Check again</button><button class="quiet" data-action="closeov">Close</button>');
+    }else throw Error('This browser cannot provide an English on-device voice pack right now. Try updating Google Chrome, or use the buttons for now.');
+  }catch(e){if(run!==voiceSetupEpoch)return;showDialog('On-device voice unavailable',`<p class="quote">On-device voice isn’t ready.</p><p>${esc(e.message)}</p><button data-action="voice-local-check">Check again</button><button class="quiet" data-action="closeov">Use buttons for now</button>`);}
 }
 const WORDS={one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,fifteen:15,twenty:20,thirty:30,forty:40,fortyfive:45,fifty:50,sixty:60,ninety:90};
 function minutesIn(t){const m=t.match(/(\d+|[a-z]+(?:[ -][a-z]+)?)\s*(?:min|minute|minutes)\b/);if(!m)return null;const raw=m[1];
@@ -625,7 +670,7 @@ const pageLink=()=>location.origin+location.pathname;
 function showVoiceHelp(){
   showDialog('Voice commands',`<div class="stack">
     ${!SR?'<p>This browser does not offer speech recognition to this page. Try opening Ship Anyway in Google Chrome for voice commands.</p>':''}
-    <p class="quote">Tap Talk, then say one of these.</p>
+    <p class="quote">Tap Talk, then say one of these.</p>${localVoiceSupported()?'<button data-action="voice-local-check">Set up on-device voice</button>':''}
     <ul class="plain small">
       <li><span>“Start the proposal for 45 minutes”<br><span class="muted">title and cap optional; add “move first” for the warm-up</span></span></li>
       <li><span>“Ship it” · “Pause” · “Resume” · “One more pass” · “Stop”</span></li>
@@ -675,6 +720,7 @@ function showDialog(label,content){
 }
 function closeDialog(){
   if($('#overlay').hidden)return;
+  voiceSetupEpoch++;
   $('#overlay').hidden=true;$('.wrap').inert=false;$('#fab').hidden=false;$('#talk').hidden=false;
   if(dialogPausedSession&&S.active===dialogPausedSession&&S.active.pausedAt){S.active.ends+=Date.now()-S.active.pausedAt;S.active.pausedAt=null;save();}
   dialogPausedSession=null;
@@ -720,7 +766,7 @@ function showSavePlace(){
     <button class="primary" data-action="saveplace">Save my place</button><button class="quiet" data-action="closeov">Keep going</button>`);
 }
 function showVoiceConsent(){
-  showDialog('Optional voice input',`<p class="quote">Use your voice?</p><p>Your browser may send microphone audio to its speech recognition provider. All tasks can also be managed with the buttons.</p><button class="primary" data-action="voice-enable">Enable voice &amp; listen</button><button class="quiet" data-action="closeov">Use buttons</button>`);
+  showDialog('Optional voice input',`<p class="quote">Use your voice?</p><p>Online recognition may send microphone audio to your browser’s speech recognition provider. All tasks can also be managed with the buttons.</p>${localVoiceSupported()?'<button class="primary" data-action="voice-local-check">Set up on-device voice</button>':''}<button data-action="voice-enable">Enable voice &amp; listen</button><button class="quiet" data-action="closeov">Use buttons</button>`);
 }
 function showVoiceUnavailable(){
   showDialog('Voice support',`<p class="quote">Voice commands need a supported browser.</p>
