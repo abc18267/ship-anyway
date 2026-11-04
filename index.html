@@ -70,6 +70,7 @@ button:disabled{opacity:.5;cursor:default}
 .chips{display:flex;gap:6px;flex-wrap:wrap}
 .chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 12px;font-size:14px;font-weight:600;cursor:pointer}
 .chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+a.chip{text-decoration:none;color:var(--ink);display:inline-flex;align-items:center;min-height:44px}
 .muted{color:var(--muted)}
 .small{font-size:13px}
 .title{font-family:var(--font-display);font-weight:800;font-size:20px;line-height:1.2;text-wrap:balance;margin:0}
@@ -179,6 +180,7 @@ function readState(raw){
     for(const k of ['started','shipped','savedAt','outcomeAt','checkAfter'])if(t[k]!=null&&!time(t[k]))throw Error('Invalid task date.');
     if(t.planned!=null&&!date(t.planned))throw Error('Invalid planned date.');
     for(const k of ['nextStep','revision'])if(t[k]!=null&&typeof t[k]!=='string')throw Error('Invalid task note.');
+    if(t.at!=null&&!(typeof t.at==='string'&&/^\d{2}:\d{2}$/.test(t.at)))throw Error('Invalid reminder time.');
     if(t.outcome!=null&&!['fine','minor','problem'].includes(t.outcome))throw Error('Invalid outcome.');
   }
   for(const e of p.events){
@@ -333,7 +335,8 @@ function renderNow(){
       </div></details>
     </form></section>`);
     const list=items=>`<ul class="plain">${items.map(t=>`<li class="queue-item"><span><strong>${esc(t.title)}</strong>${t.nextStep?`<br><span class="small">Next: ${esc(t.nextStep)}</span>`:''}<br><span class="small muted">${t.savedAt?'Your place is saved':t.planned?fmtDate(t.planned):'Whenever you’re ready'}</span></span>
-      <span class="row"><button class="grow" data-action="${t.started?'resumeq':'quickq'}" data-id="${esc(t.id)}">${t.started?'Resume':'Start'} for 2 minutes</button><button class="quiet" data-action="drop" data-id="${esc(t.id)}" aria-label="Set aside ${esc(t.title)}">Set aside</button></span></li>`).join('')}</ul>`;
+      <span class="row"><button class="grow" data-action="${t.started?'resumeq':'quickq'}" data-id="${esc(t.id)}">${t.started?'Resume':'Start'} for 2 minutes</button><button class="quiet" data-action="drop" data-id="${esc(t.id)}" aria-label="Set aside ${esc(t.title)}">Set aside</button></span>
+      <span class="row small" style="gap:6px"><label class="row small" style="gap:6px">Remind me at <input type="time" data-time="${esc(t.id)}" value="${esc(t.at||'09:00')}" style="width:auto;padding:4px 8px"></label><a class="chip" target="_blank" rel="noopener noreferrer" href="${esc(gcal({title:t.title,day:t.planned||today(),at:t.at,minutes:t.cap||S.settings.cap,details:'Open Ship Anyway and start for 2 minutes.\nDone means: '+(t.done||S.settings.done)+'\n'+pageLink()}))}">Add to Google Calendar</a></span></li>`).join('')}</ul>`;
     if(recent.length)parts.push(`<section><h2>Pick up where you left off</h2>${list(recent)}</section>`);
     if(older.length)parts.push(`<details class="card"><summary>Other saved tasks (${older.length})</summary>${list(older)}</details>`);
     const aside=S.tasks.filter(t=>t.dropped&&!t.shipped);
@@ -405,6 +408,13 @@ function renderSetup(){
     <label class="f">Default "done means"<textarea id="s-done" rows="2">${esc(s.done)}</textarea></label>
     <div class="row"><label class="f grow">Plan started<input type="date" id="s-start" value="${esc(s.start)}"></label>
     <label class="f grow">Three-month review<input type="date" id="s-review" value="${esc(s.review)}"></label></div>
+  </div></section>
+  <section><h2>Reminders</h2><div class="card stack">
+    <p class="small muted" style="margin:0">A website can’t ring your phone on its own. These open a prefilled Google Calendar event; save it once and Calendar’s own notification does the reminding. Nothing is sent from this page.</p>
+    <div class="row"><label class="f grow">Daily check-in time<input type="time" id="s-checkin" value="${esc(s.checkinAt||'09:00')}"></label>
+      <a class="chip" style="align-self:flex-end" target="_blank" rel="noopener noreferrer" href="${esc(gcal({title:'Ship Anyway: check in and start for 2 minutes',day:today(),at:s.checkinAt||'09:00',minutes:10,recur:'FREQ=DAILY',details:'Answer any waiting check-in, then start one thing for 2 minutes.\n'+pageLink()}))}">Add daily event</a></div>
+    <div class="row"><span class="grow small">Three-month review on ${esc(fmtDate(s.review))}</span>
+      <a class="chip" target="_blank" rel="noopener noreferrer" href="${esc(gcal({title:'Ship Anyway: three-month review',day:s.review,at:'09:00',minutes:30,details:'Look at the Week tab against your first week, not at how this week felt.\n'+pageLink()}))}">Add to calendar</a></div>
   </div></section>
   <details class="card"><summary>Personal support notes${anyT||anyR?' · saved selections':''}</summary>
     <p class="small muted">Optional notes for a conversation with someone who supports you. Existing selections are kept here.</p>
@@ -602,6 +612,16 @@ function command(raw){
   return null;
 }
 const cap1=s=>s.charAt(0).toUpperCase()+s.slice(1);
+
+/* ---------- Google Calendar links: a prefilled "new event" page, no API, no sign-in, nothing sent by this page ---------- */
+const z=d=>new Date(d).toISOString().replace(/[-:]|\.\d{3}/g,'');
+function gcal({title,day,at,minutes,details,recur}){
+  const [h,m]=(at||'09:00').split(':').map(Number);const start=dayStart(day)+h*3600000+m*60000;
+  const p=new URLSearchParams({action:'TEMPLATE',text:title,dates:z(start)+'/'+z(start+minutes*60000),details:details||''});
+  if(recur)p.set('recur','RRULE:'+recur);
+  return 'https://calendar.google.com/calendar/render?'+p.toString();
+}
+const pageLink=()=>location.origin+location.pathname;
 function showVoiceHelp(){
   showDialog('Voice commands',`<div class="stack">
     <p class="quote">Tap Talk, then say one of these.</p>
@@ -633,6 +653,8 @@ document.addEventListener('change',e=>{
   else if(el.id==='s-done')s.done=el.value.trim()||s.done;
   else if(el.id==='s-start'&&el.value)s.start=el.value;
   else if(el.id==='s-review'&&el.value)s.review=el.value;
+  else if(el.id==='s-checkin'&&el.value)s.checkinAt=el.value;
+  else if(el.dataset.time){const t=task(el.dataset.time);if(t&&el.value)t.at=el.value;}
   else if(el.dataset.trig){s.triggers[el.dataset.trig]=el.checked;}
   else if(el.dataset.risk){s.risk[el.dataset.risk]=el.checked;}
   else return;
