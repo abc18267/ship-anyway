@@ -335,6 +335,40 @@ class AppTests(unittest.TestCase):
         self.page.get_by_role('button', name='Bring back').click()
         expect(self.page.get_by_role('button', name='Resume for 2 minutes')).to_be_visible()
 
+    def test_voice_button_explains_unsupported_browser(self):
+        self.page.add_init_script('window.SpeechRecognition = undefined; window.webkitSpeechRecognition = undefined;')
+        self.page.reload()
+        self.page.get_by_role('button', name='Talk', exact=True).click()
+        expect(self.page.get_by_role('dialog')).to_contain_text('Google Chrome')
+        expect(self.page.get_by_role('dialog')).to_contain_text('Download backup')
+        self.page.get_by_role('button', name='See voice commands').click()
+        expect(self.page.get_by_role('dialog')).to_contain_text('Start the proposal for 45 minutes')
+        self.page.keyboard.press('Escape')
+        expect(self.page.get_by_role('button', name='Talk', exact=True)).to_be_visible()
+        self.page.get_by_role('link', name='Setup', exact=True).click()
+        self.page.get_by_role('button', name='Voice commands & privacy').click()
+        expect(self.page.get_by_role('dialog')).to_contain_text('does not offer speech recognition')
+
+    def test_voice_recognition_result_starts_task(self):
+        self.page.add_init_script('''
+            window.SpeechRecognition = class {
+                constructor() { window.testRecognition = this; }
+                start() { this.onstart(); }
+                stop() { this.onend(); }
+            };
+        ''')
+        self.page.reload()
+        self.page.get_by_role('button', name='Talk', exact=True).click()
+        self.page.get_by_role('button', name='Enable voice & listen').click()
+        expect(self.page.get_by_role('button', name='Listening…', exact=True)).to_be_visible()
+        self.page.evaluate('''() => {
+            window.testRecognition.onresult({results: [[{transcript: 'start the proposal for 15 minutes'}]]});
+            window.testRecognition.onend();
+        }''')
+        self.assertEqual(self.state()['tasks'][0]['title'], 'The proposal')
+        self.assertEqual(self.state()['tasks'][0]['cap'], 15)
+        expect(self.page.get_by_role('button', name='Talk', exact=True)).to_be_visible()
+
 
 if __name__ == '__main__':
     unittest.main()

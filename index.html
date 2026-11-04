@@ -132,7 +132,7 @@ button,summary{min-height:44px}
   <main id="view" class="stack"></main>
 </div>
 <button class="fab" id="fab" data-action="spiral">I’m stuck</button>
-<button class="fab talk" id="talk" data-action="talk" hidden>Talk</button>
+<button class="fab talk" id="talk" data-action="talk">Talk</button>
 <div id="overlay" class="overlay" hidden></div>
 <div id="toast" class="toast" role="status" hidden></div>
 <input type="file" id="restore-file" accept=".json,application/json" hidden>
@@ -425,7 +425,7 @@ function renderSetup(){
   <section><h2>Data &amp; privacy</h2><div class="card stack">
     <p class="small muted" style="margin:0">Tasks and notes are saved in this browser only. There is no account sync. Clearing browser data removes them; download a backup to keep a copy or move devices.</p>
     <p class="small muted" style="margin:0">Voice is optional. Your browser may send audio to its speech recognition provider. Ship Anyway does not run a speech server. Browser support varies.</p>
-    ${SR?'<button data-action="voicehelp">Voice commands &amp; privacy</button>':''}
+    <button data-action="voicehelp">Voice commands &amp; privacy</button>
     <div class="row"><button data-action="export">Download backup</button><button data-action="import">Restore backup</button></div>
     <button class="quiet" data-action="export-copy">Copy data as JSON</button>
     <button class="danger" data-action="reset">Erase everything</button>
@@ -489,7 +489,7 @@ document.addEventListener('click',e=>{
 function handle(act,b){
   const id=b.dataset.id,now=Date.now();
   if(['skipex','morepass','revision-start','pause','ship','stop','saveplace','continuework'].includes(act)&&!S.active)return;
-  if(act==='talk'){if(S.settings.voiceConsent)listen();else showVoiceConsent();}
+  if(act==='talk'){if(!SR)showVoiceUnavailable();else if(S.settings.voiceConsent)listen();else showVoiceConsent();}
   else if(act==='voice-enable'){S.settings.voiceConsent=true;closeDialog();save();listen();}
   else if(act==='plan'){
     const t=newTask(($('#t-title')?.value||'').trim()||'Take one small step');
@@ -564,7 +564,7 @@ const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 let rec=null,listening=false;
 function speak(t){try{if(!window.speechSynthesis)return;speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.rate=1.05;speechSynthesis.speak(u);}catch(e){}}
 function listen(){
-  if(!SR){toast('Voice needs Chrome, Edge or Safari.');return;}
+  if(!SR){showVoiceUnavailable();return;}
   if(listening){try{rec.stop();}catch(e){}return;}
   primeAudio();
   rec=new SR();rec.lang=navigator.language||'en-US';rec.interimResults=false;rec.maxAlternatives=3;
@@ -624,6 +624,7 @@ function gcal({title,day,at,minutes,details,recur}){
 const pageLink=()=>location.origin+location.pathname;
 function showVoiceHelp(){
   showDialog('Voice commands',`<div class="stack">
+    ${!SR?'<p>This browser does not offer speech recognition to this page. Try opening Ship Anyway in Google Chrome for voice commands.</p>':''}
     <p class="quote">Tap Talk, then say one of these.</p>
     <ul class="plain small">
       <li><span>“Start the proposal for 45 minutes”<br><span class="muted">title and cap optional; add “move first” for the warm-up</span></span></li>
@@ -674,7 +675,7 @@ function showDialog(label,content){
 }
 function closeDialog(){
   if($('#overlay').hidden)return;
-  $('#overlay').hidden=true;$('.wrap').inert=false;$('#fab').hidden=false;$('#talk').hidden=!SR;
+  $('#overlay').hidden=true;$('.wrap').inert=false;$('#fab').hidden=false;$('#talk').hidden=false;
   if(dialogPausedSession&&S.active===dialogPausedSession&&S.active.pausedAt){S.active.ends+=Date.now()-S.active.pausedAt;S.active.pausedAt=null;save();}
   dialogPausedSession=null;
   if(dialogReturnFocus?.isConnected&&!dialogReturnFocus.closest('[hidden]'))dialogReturnFocus.focus();else $('#fab').focus();
@@ -721,13 +722,18 @@ function showSavePlace(){
 function showVoiceConsent(){
   showDialog('Optional voice input',`<p class="quote">Use your voice?</p><p>Your browser may send microphone audio to its speech recognition provider. All tasks can also be managed with the buttons.</p><button class="primary" data-action="voice-enable">Enable voice &amp; listen</button><button class="quiet" data-action="closeov">Use buttons</button>`);
 }
+function showVoiceUnavailable(){
+  showDialog('Voice support',`<p class="quote">Voice commands need a supported browser.</p>
+    <p>This browser does not offer speech recognition to this page. Try opening Ship Anyway in <strong>Google Chrome</strong>, then tap <strong>Talk</strong> and allow microphone access.</p>
+    <p class="small muted">To bring your tasks to another browser, use Setup → Download backup here, then Restore backup there.</p>
+    <button data-action="voicehelp">See voice commands</button><button class="primary" data-action="closeov">Got it</button>`);
+}
 async function copy(text){
   try{await navigator.clipboard.writeText(text);toast('Copied.');}
   catch(e){const ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';document.body.appendChild(ta);ta.select();toast('Select and copy the text.');setTimeout(()=>ta.remove(),8000);}
 }
 let toastT=null;
 function toast(msg){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,3500);}
-if(SR)$('#talk').hidden=false;
 window.shipAnyway={command};
 storageStatus();render();timer=setInterval(tick,1000);
 })();
