@@ -4,13 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0F7A66">
+<meta name="description" content="Start small, save your place, and finish at good enough. A gentle task companion with two-minute starts and optional focus sessions.">
 <style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}img{max-width:100%}[hidden]{display:none!important}</style>
 <title>Ship Anyway</title>
 </head>
 <body>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
 <style>
-/* Layout: one 560px column, phone-first. One primary action on screen at a time; a floating "Spiraling" button always within thumb reach. */
+/* One column, one next action, optional detail. */
 :root{
   --bg:#F1F4F6; --surface:#FFFFFF; --soft:#E6ECF1; --line:#D5DCE3;
   --ink:#16212C; --muted:#5B6A79;
@@ -99,6 +100,19 @@ svg.chart{width:100%;height:auto;display:block;max-width:100%}
 .check{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--line)}
 .check:first-of-type{border-top:none}
 .check input{margin-top:4px}
+summary{cursor:pointer;font-weight:600;padding:6px 0}
+details[open]>summary{margin-bottom:12px}
+button,a,input,summary{touch-action:manipulation}
+button,summary{min-height:44px}
+.title,.done-line,p{overflow-wrap:anywhere}
+.next-step{padding:12px;background:var(--surface);border-radius:9px;border:1px solid var(--line)}
+.next-step b{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+.queue-item{align-items:flex-start!important;flex-direction:column}
+.queue-item .row{width:100%}
+.welcome{margin:0;font-size:15px;color:var(--muted)}
+#storage-warning{margin-bottom:0}
+#storage-warning p{margin:0 0 8px}
+.overlay .card{overscroll-behavior:contain}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(80px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 14px;border-radius:10px;font-size:14px;z-index:30}
 @media (prefers-reduced-motion:no-preference){.toast{animation:up .2s ease-out}@keyframes up{from{opacity:0;transform:translate(-50%,8px)}}}
 </style>
@@ -106,19 +120,21 @@ svg.chart{width:100%;height:auto;display:block;max-width:100%}
 <div class="wrap">
   <header>
     <h1>Ship Anyway</h1>
-    <span class="sync" id="sync">saving on this device</span>
+    <span class="sync" id="sync">saved in this browser</span>
   </header>
   <nav id="nav">
     <a href="#now" data-view="now">Now</a>
     <a href="#week" data-view="week">Week</a>
     <a href="#setup" data-view="setup">Setup</a>
   </nav>
+  <section id="storage-warning" class="card bad" role="alert" hidden></section>
   <main id="view" class="stack"></main>
 </div>
-<button class="fab" id="fab" data-action="spiral">Spiraling</button>
+<button class="fab" id="fab" data-action="spiral">I’m stuck</button>
 <button class="fab talk" id="talk" data-action="talk" hidden>Talk</button>
 <div id="overlay" class="overlay" hidden></div>
-<div id="toast" class="toast" hidden></div>
+<div id="toast" class="toast" role="status" hidden></div>
+<input type="file" id="restore-file" accept=".json,application/json" hidden>
 
 <script>
 (function(){
@@ -144,41 +160,97 @@ function defaults(){
     settings:{cap:25,done:'A version exists that another person could look at.',exercise:20,
       start:today(),review:dayKey(t+90*DAY),triggers:{},risk:{}}};
 }
-let S=defaults();
-try{const raw=localStorage.getItem(KEY);if(raw){const p=JSON.parse(raw);if(p&&p.v===1)S=Object.assign(defaults(),p);}}catch(e){}
+// Keep the v1 storage key so existing tasks and sessions survive this release.
+function readState(raw){
+  const p=JSON.parse(raw,(key,value)=>{
+    if(['__proto__','prototype','constructor'].includes(key))throw Error('Unsupported field in backup.');
+    return value;
+  });
+  const obj=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
+  const time=v=>Number.isFinite(v)&&v>=0&&v<=8640000000000000;
+  const date=v=>typeof v==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(v)&&dayKey(dayStart(v))===v;
+  const mins=v=>Number.isFinite(v)&&v>=1&&v<=240;
+  if(!obj(p)||p.v!==1||!Array.isArray(p.tasks)||!Array.isArray(p.events)||!obj(p.settings))throw Error('Choose a Ship Anyway JSON backup (version 1).');
+  if(p.updated!=null&&!time(p.updated))throw Error('Invalid backup date.');
+  const ids=new Set();
+  for(const t of p.tasks){
+    if(!obj(t)||typeof t.id!=='string'||!t.id||ids.has(t.id)||typeof t.title!=='string'||typeof t.done!=='string'||!mins(t.cap)||!time(t.created))throw Error('The backup has an invalid or duplicate task.');
+    ids.add(t.id);
+    for(const k of ['started','shipped','savedAt','outcomeAt','checkAfter'])if(t[k]!=null&&!time(t[k]))throw Error('Invalid task date.');
+    if(t.planned!=null&&!date(t.planned))throw Error('Invalid planned date.');
+    for(const k of ['nextStep','revision'])if(t[k]!=null&&typeof t[k]!=='string')throw Error('Invalid task note.');
+    if(t.outcome!=null&&!['fine','minor','problem'].includes(t.outcome))throw Error('Invalid outcome.');
+  }
+  for(const e of p.events){
+    if(!obj(e)||typeof e.t!=='string'||!time(e.at)||(e.recovered!=null&&!time(e.recovered)))throw Error('Invalid event in backup.');
+  }
+  const d=defaults();
+  const settings={...d.settings,...p.settings};
+  if(!mins(settings.cap)||!Number.isFinite(settings.exercise)||settings.exercise<5||settings.exercise>60||typeof settings.done!=='string'||!date(settings.start)||!date(settings.review)||!obj(settings.triggers)||!obj(settings.risk))throw Error('Invalid settings in backup.');
+  if(p.active!=null){
+    const a=p.active,t=p.tasks.find(t=>t.id===a.taskId);
+    if(!obj(a)||!t||t.shipped||t.dropped||!['work','exercise'].includes(a.phase)||!time(a.ends)||!time(a.startedAt)||!Number.isInteger(a.passes)||a.passes<0||a.passes>2||(a.pausedAt!=null&&!time(a.pausedAt)))throw Error('Invalid active session.');
+  }
+  return {...d,...p,settings,active:p.active||null};
+}
+let S=defaults(),storageError='',protectedRaw=null,protectStorage=false;
+try{
+  const raw=localStorage.getItem(KEY);
+  if(raw){
+    try{S=readState(raw);}
+    catch(e){protectedRaw=raw;protectStorage=true;storageError='Your saved data could not be read. It has been kept untouched. Download it before restoring a backup or resetting.';}
+  }
+}catch(e){storageError='Browser storage is unavailable. Keep this tab open and download a backup to keep your work.';}
+const welcomeBack=S.tasks.length>0&&Date.now()-S.updated>3*DAY;
+let pendingRestore=null;
 
 /* ---------- persistence ---------- */
-let ref=null,writing=false,dirty=false;
+function storageStatus(){
+  $('#sync').textContent=storageError?'not saved — download a backup':'saved in this browser';
+  const el=$('#storage-warning');el.hidden=!storageError;
+  el.innerHTML=storageError?`<p>${esc(storageError)}</p><button data-action="export">Download current work</button>${protectedRaw!==null?' <button data-action="export-original">Download original saved data</button>':''}`:'';
+}
 function save(){
   S.updated=Date.now();
-  // keep the document small: prune old resolved events and old tasks
-  const cutoff=Date.now()-200*DAY;
-  S.events=S.events.filter(e=>e.at>cutoff).slice(-600);
-  S.tasks=S.tasks.filter(t=>t.created>cutoff).slice(-500);
-  try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}
-  dirty=true;flush();render();
+  // No automatic pruning: unfinished tasks and history belong to the user.
+  let saved=false;
+  if(!protectStorage){
+    try{localStorage.setItem(KEY,JSON.stringify(S));storageError='';saved=true;}
+    catch(e){storageError='Your latest changes could not be saved in this browser. Keep this tab open and download a backup before leaving.';}
+  }
+  storageStatus();render();return saved;
 }
-async function flush(){
-  if(!ref||writing||!dirty)return;
-  writing=true;dirty=false;
-  try{await ref.set(JSON.parse(JSON.stringify(S)));setSync('synced');}
-  catch(e){setSync('saving on this device');}
-  writing=false;if(dirty)flush();
+function download(raw,name){
+  const url=URL.createObjectURL(new Blob([raw],{type:'application/json'}));
+  const link=document.createElement('a');link.href=url;link.download=name;
+  document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);
 }
-function setSync(t){$('#sync').textContent=t;}
-(async()=>{
+function exportData(){download(JSON.stringify(S,null,2),'ship-anyway-'+today()+'.json');}
+async function prepareRestore(file){
+  if(!file)return;
   try{
-    const user=await window.claude?.use?.('user');const db=await window.claude?.use?.('db');
-    if(!user||!db)return;
-    const id=await user.id();if(!id)return;
-    ref=db.doc('data/users/'+id+'/state');
-    const snap=await ref.get();
-    if(snap.exists){const r=snap.data();if((r.updated||0)>(S.updated||0)){S=Object.assign(defaults(),r);try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}render();}else if(S.tasks.length||S.events.length){dirty=true;flush();}}
-    else{dirty=true;flush();}
-    setSync('synced');
-    ref.onSnapshot(s=>{if(!s.exists||s.metadata.hasPendingWrites)return;const r=s.data();if((r.updated||0)>(S.updated||0)){S=Object.assign(defaults(),r);try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}render();}},()=>setSync('saving on this device'));
-  }catch(e){}
-})();
+    if(file.size>10*1024*1024)throw Error('This backup is larger than 10 MB. Your current data has not changed.');
+    pendingRestore=readState(await file.text());
+    showDialog('Restore backup',`<p class="quote">Restore this backup?</p>
+      <p>${pendingRestore.tasks.length} tasks and ${pendingRestore.events.length} activity records. This replaces the tasks, history, settings and session in this browser.</p>
+      <p class="small muted">A copy of your current work will download first. Any running session in the backup will be restored paused.</p>
+      <button class="primary" data-action="restore-confirm">Download current data &amp; restore</button>
+      <button class="quiet" data-action="closeov">Cancel</button>`);
+  }catch(e){pendingRestore=null;showDialog('Backup not restored',`<p class="quote">Backup not restored</p><p>${esc(e.message)}</p><p>Your current work has not changed.</p><button data-action="closeov">Close</button>`);}
+}
+function restoreBackup(){
+  if(!pendingRestore)return;
+  exportData();
+  if(protectedRaw!==null)download(protectedRaw,'ship-anyway-original.json');
+  const restored=pendingRestore;
+  // Freeze the backup's session at its last saved point; never restart it unattended.
+  if(restored.active&&!restored.active.pausedAt)restored.active.pausedAt=Math.min(restored.updated,Date.now());
+  restored.updated=Date.now();
+  try{localStorage.setItem(KEY,JSON.stringify(restored));}
+  catch(e){toast('Could not store the backup. Your current work has not changed.');return;}
+  S=restored;capPick=S.settings.cap;protectedRaw=null;protectStorage=false;storageError='';pendingRestore=null;
+  closeDialog();storageStatus();location.hash='now';render();toast('Backup restored.');
+}
 
 /* ---------- derived ---------- */
 const task=id=>S.tasks.find(t=>t.id===id);
@@ -210,90 +282,80 @@ function route(){
 function render(){
   const v=route();
   $('#view').innerHTML=v==='week'?renderWeek():v==='setup'?renderSetup():renderNow();
-  if(v==='now')tick();
+  tick();
 }
 window.addEventListener('hashchange',render);
 
 /* ---------- NOW ---------- */
 function renderNow(){
-  const parts=[];
-  const act=activeTask();
-  // follow-ups due
-  const due=S.tasks.filter(t=>t.shipped&&!t.outcome&&Date.now()-t.shipped>12*3600000).slice(0,3);
-  if(due.length&&!act){
-    parts.push(`<section><h2>Check-in</h2><div class="stack">`+due.map(t=>`
-      <div class="card"><p class="muted small" style="margin:0 0 4px">You shipped this ${esc(relDay(t.shipped))}. What actually happened?</p>
-      <p class="title" style="font-size:17px">${esc(t.title)}</p>
-      <div class="row" style="margin-top:10px">
-        <button class="grow" data-action="outcome" data-id="${t.id}" data-v="fine">Nothing bad</button>
-        <button class="grow" data-action="outcome" data-id="${t.id}" data-v="minor">Minor fix</button>
-        <button class="grow" data-action="outcome" data-id="${t.id}" data-v="problem">Real problem</button>
-      </div></div>`).join('')+`</div></section>`);
-  }
+  const parts=[],act=activeTask();
   if(act){
-    const a=S.active;
+    const a=S.active,paused=!!a.pausedAt,over=(a.pausedAt||Date.now())>=a.ends;
     if(a.phase==='exercise'){
-      parts.push(`<section><div class="card go stack">
-        <p class="muted small" style="margin:0">Move first. Hard enough that talking is work. The clock for the task starts by itself when this ends.</p>
-        <div class="clock" id="clock">--:--</div>
-        <p class="title" style="font-size:17px">Next: ${esc(act.title)}</p>
-        <div class="row"><button class="grow" data-action="skipex">Skip to the task</button><button class="quiet" data-action="stop">Not now</button></div>
-      </div></section>`);
+      parts.push(`<section class="card go stack"><p class="muted small" style="margin:0">Move in a way that works for you. Your task timer follows this break.</p>
+        <div class="clock" id="clock">--:--</div><p class="title">Next: ${esc(act.title)}</p>
+        <button class="primary" data-action="skipex">Start the task now</button>
+        <div class="row"><button class="grow" data-action="pause">${paused?'Resume':'Pause'}</button><button class="quiet" data-action="stop">Save my place</button></div></section>`);
     }else{
-      const paused=!!a.pausedAt;
-      const over=!paused&&Date.now()>a.ends;
-      const lastPass=a.passes>=2;
-      const longOver=over&&Date.now()-a.ends>30*60000;
-      parts.push(`<section><div class="card ${over?'warn':'go'} stack">
-        <div class="row" style="justify-content:space-between"><span class="small muted">Pass ${a.passes} of 2 · cap ${act.cap} min</span><span class="small muted" id="overlabel">${paused?'Paused':over?'Time is up':''}</span></div>
-        <div class="clock ${over?'over':''}" id="clock">--:--</div>
-        <p class="title">${esc(act.title)}</p>
-        <div class="done-line"><b>Done means</b>${esc(act.done)}</div>
-        ${over?`<p class="small" style="margin:0">The cap is the standard, not the quality. ${lastPass?'That was the last pass.':'One more pass is allowed, then it ships.'}${longOver?' Still counts if you ship it now.':''}</p>`:''}
-        <button class="primary" data-action="ship">Ship it</button>
-        <div class="row">
-          ${(over&&!lastPass)?`<button class="grow" data-action="morepass">One more pass (last)</button>`:''}
-          ${!over?`<button class="grow" data-action="pause">${paused?'Resume':'Pause'}</button>`:''}
-          <button class="quiet" data-action="stop">Not now</button>
-        </div>
-      </div></section>`);
+      parts.push(`<section class="card ${over&&!a.quick?'warn':'go'} stack">
+        <div class="row" style="justify-content:space-between"><span class="small muted">${a.quick?'A small start':`Pass ${a.passes} of 2 · ${a.passes===2?'5':act.cap} min`}</span><span class="small muted">${paused?'Paused':over?'Time to check in':''}</span></div>
+        <div class="clock" id="clock">--:--</div><p class="title">${esc(act.title)}</p>
+        ${act.nextStep?`<div class="next-step"><b>Start here</b>${esc(act.nextStep)}</div>`:''}
+        ${a.quick?`<p style="margin:0">${over?'You started. That counts. Continue if you want, or save your place for later.':'Only the next small action. You can stop after two minutes.'}</p>`:`<div class="done-line"><b>Done means</b>${esc(act.done)}</div>`}
+        ${!a.quick&&over?'<p style="margin:0">Time to check: does this meet your definition of done? You can finish, make one specific fix, or save a next step.</p>':''}
+        ${a.passes===2&&act.revision?`<div class="next-step"><b>This pass is for</b>${esc(act.revision)}</div>`:''}
+        ${a.quick?`<button class="primary" data-action="continuework">Continue for ${act.cap} minutes</button>
+          <div class="row"><button class="grow" data-action="stop">Enough for now</button><button class="quiet" data-action="ship">Task is done</button></div>`:`<button class="primary" data-action="ship">Done — ship it</button>
+          ${over&&a.passes<2?'<button data-action="morepass">One specific fix · 5 minutes</button>':''}
+          <button data-action="stop">Save my place</button>`}
+        <button class="quiet" data-action="pause">${paused?'Resume timer':'Pause timer'}</button>
+      </section>`);
     }
   }else{
     const s=S.settings;
-    const firstRun=!S.events.some(e=>e.t==='spiral');
-    const queued=S.tasks.filter(t=>!t.started&&!t.shipped&&!t.dropped).sort((x,y)=>(x.planned||'9').localeCompare(y.planned||'9'));
-    parts.push(`<section><h2>Start</h2><form class="card stack" id="startform">
-      <label class="f">What are you starting?<input type="text" id="t-title" placeholder="One line is enough. Enter starts the clock." autocomplete="off"></label>
-      <label class="f">Done means<textarea id="t-done" rows="2">${esc(s.done)}</textarea></label>
-      <div class="chips">${DONE_PRESETS.map(p=>`<button type="button" class="chip" data-done="${esc(p)}">${esc(p.replace(/\.$/,''))}</button>`).join('')}</div>
-      <div class="f"><span>Time cap</span><div class="chips" id="caps">${[15,25,45,60].map(c=>`<button type="button" class="chip" data-cap="${c}" aria-pressed="${c===capPick}">${c} min</button>`).join('')}<button type="button" class="chip" data-cap="custom" aria-pressed="${![15,25,45,60].includes(capPick)}">Custom</button>
-        <input type="number" id="t-custom" min="1" max="240" inputmode="numeric" aria-label="Custom cap in minutes" style="width:5.5em;padding:6px 10px" value="${![15,25,45,60].includes(capPick)?capPick:''}" ${[15,25,45,60].includes(capPick)?'hidden':''}></div></div>
-      <label class="row small" style="gap:8px"><input type="checkbox" id="t-ex" ${s.exLast?'checked':''}> Move hard for ${s.exercise} min first</label>
-      <button class="primary" type="submit" data-action="start">Start the clock</button>
-      <div class="row small"><button type="button" class="quiet" data-action="plan" data-day="${today()}">Plan for today</button><button type="button" class="quiet" data-action="plan" data-day="${dayKey(Date.now()+DAY)}">Plan for tomorrow</button></div>
-      ${firstRun?`<p class="small muted" style="margin:0">A chime sounds when the cap hits. When self-criticism hits, tap <b>Spiraling</b> in the corner; it works whether or not a clock is running.${SR?' <b>Talk</b> runs the page by voice.':''}</p>`:''}
-      ${SR?`<button type="button" class="quiet small" data-action="voicehelp" style="align-self:flex-start;padding:4px 0">Voice commands</button>`:''}
+    const queued=S.tasks.filter(t=>!t.shipped&&!t.dropped).sort((x,y)=>(y.savedAt||0)-(x.savedAt||0)||(x.planned||'9').localeCompare(y.planned||'9'));
+    const recent=queued.filter(t=>t.savedAt&&dayKey(t.savedAt)>=dayKey(Date.now()-3*DAY)||t.planned===today());
+    const older=queued.filter(t=>!recent.includes(t));
+    if(welcomeBack)parts.push('<p class="welcome">Welcome back. Pick one small thing.</p>');
+    parts.push(`<section><h2>One small start</h2><form class="card stack" id="startform">
+      <label class="f">What’s one tiny action?<input type="text" id="t-title" placeholder="Open the proposal. Write one sentence." autocomplete="off"></label>
+      <button class="primary" type="submit" value="quick" formnovalidate>Start 2 minutes</button>
+      <p class="small muted" style="margin:0">Starting counts. You can stop when the two minutes are up.</p>
+      <details id="start-options"><summary>More options</summary><div class="stack">
+        <label class="f">Done means<textarea id="t-done" rows="2">${esc(s.done)}</textarea></label>
+        <div class="chips">${DONE_PRESETS.map(p=>`<button type="button" class="chip" data-done="${esc(p)}">${esc(p.replace(/\.$/,''))}</button>`).join('')}</div>
+        <div><span class="small muted">Focus time</span><div class="chips">${[15,25,45,60].map(c=>`<button type="button" class="chip" data-cap="${c}" aria-pressed="${c===capPick}">${c} min</button>`).join('')}
+          <button type="button" class="chip" data-cap="custom" aria-pressed="${![15,25,45,60].includes(capPick)}">Custom</button>
+          <input type="number" id="t-custom" min="1" max="240" inputmode="numeric" aria-label="Custom cap in minutes" style="width:6em" value="${![15,25,45,60].includes(capPick)?capPick:''}" ${[15,25,45,60].includes(capPick)?'hidden':''}></div></div>
+        <label class="row small"><input type="checkbox" id="t-ex" ${s.exLast?'checked':''}> Optional movement for ${s.exercise} min first</label>
+        <button type="submit" value="focus">Start a focus session</button>
+        <div class="row"><button type="button" class="quiet grow" data-action="plan" data-day="${today()}">Plan for today</button><button type="button" class="quiet grow" data-action="plan" data-day="${dayKey(Date.now()+DAY)}">Plan for tomorrow</button></div>
+      </div></details>
     </form></section>`);
-    if(queued.length){
-      parts.push(`<section><h2>Planned</h2><ul class="plain">`+queued.map(t=>`<li><span>${esc(t.title)}<br><span class="small muted">${t.planned?(t.planned===today()?'today':fmtDate(t.planned)):'no day'} · ${t.cap} min</span></span>
-        <span class="row" style="flex-wrap:nowrap"><button data-action="startq" data-id="${t.id}">Start</button><button class="quiet" data-action="drop" data-id="${t.id}" aria-label="Remove">×</button></span></li>`).join('')+`</ul></section>`);
-    }
+    const list=items=>`<ul class="plain">${items.map(t=>`<li class="queue-item"><span><strong>${esc(t.title)}</strong>${t.nextStep?`<br><span class="small">Next: ${esc(t.nextStep)}</span>`:''}<br><span class="small muted">${t.savedAt?'Your place is saved':t.planned?fmtDate(t.planned):'Whenever you’re ready'}</span></span>
+      <span class="row"><button class="grow" data-action="${t.started?'resumeq':'quickq'}" data-id="${esc(t.id)}">${t.started?'Resume':'Start'} for 2 minutes</button><button class="quiet" data-action="drop" data-id="${esc(t.id)}" aria-label="Set aside ${esc(t.title)}">Set aside</button></span></li>`).join('')}</ul>`;
+    if(recent.length)parts.push(`<section><h2>Pick up where you left off</h2>${list(recent)}</section>`);
+    if(older.length)parts.push(`<details class="card"><summary>Other saved tasks (${older.length})</summary>${list(older)}</details>`);
+    const aside=S.tasks.filter(t=>t.dropped&&!t.shipped);
+    if(aside.length)parts.push(`<details class="card"><summary>Set aside (${aside.length})</summary><ul class="plain">${aside.map(t=>`<li class="queue-item"><span>${esc(t.title)}</span><button data-action="undrop" data-id="${esc(t.id)}">Bring back</button></li>`).join('')}</ul></details>`);
   }
-  // evidence strip
-  const all=S.tasks.filter(t=>t.outcome);const o=outcomes(all);
-  const n=all.length;
-  parts.push(`<section><h2>Evidence</h2><div class="card">
-    ${n?`<p style="margin:0 0 8px"><b>${o.fine} of ${n}</b> things you shipped under a cap turned out fine. ${o.minor} needed a minor fix. ${o.problem} caused a real problem.</p>
-    <div class="bar"><i style="width:${100*o.fine/n}%;background:var(--go)"></i><i style="width:${100*o.minor/n}%;background:var(--warn)"></i><i style="width:${100*o.problem/n}%;background:var(--bad)"></i></div>`
-    :`<p class="muted" style="margin:0">Nothing logged yet. Each time you ship under a cap, this page asks you the next day what actually happened. The record of what happened is the thing that loosens the fear.</p>`}
-  </div></section>`);
+  const due=dueTasks().slice(0,3);
+  if(due.length&&!act)parts.push(`<details class="card"><summary>Optional check-ins (${due.length})</summary><div class="stack">${due.map(t=>`<div>
+    <p class="small muted">You finished this ${esc(relDay(t.shipped))}. What happened?</p><p class="title" style="font-size:17px">${esc(t.title)}</p>
+    <div class="row" style="margin-top:10px"><button class="grow" data-action="outcome" data-id="${esc(t.id)}" data-v="fine">Went fine</button><button class="grow" data-action="outcome" data-id="${esc(t.id)}" data-v="minor">Minor fix</button><button class="grow" data-action="outcome" data-id="${esc(t.id)}" data-v="problem">Real problem</button></div>
+    <div class="row"><button class="quiet" data-action="checklater" data-id="${esc(t.id)}">Too soon to tell</button><button class="quiet" data-action="skipcheck" data-id="${esc(t.id)}">Skip</button></div>
+    </div>`).join('')}</div></details>`);
+  const all=S.tasks.filter(t=>t.outcome),o=outcomes(all),n=all.length;
+  parts.push(`<details class="card"><summary>What happened after finishing</summary>
+    <p style="margin:0">${n?`${o.fine} of ${n} checked-in tasks went fine. ${o.minor} needed a minor fix. ${o.problem} had a real problem.`:'After you finish a task, you can check in the next day. There’s no need to fill in every check-in.'}</p></details>`);
   return parts.join('');
 }
+function dueTasks(){return S.tasks.filter(t=>t.shipped&&!t.outcome&&!t.skipCheck&&Date.now()-t.shipped>DAY&&(!t.checkAfter||t.checkAfter<=Date.now()));}
 
 /* ---------- WEEK ---------- */
 function renderWeek(){
   const now=Date.now();
-  const cur=stats(now-7*DAY,now+DAY);
+  const cur=stats(now-7*DAY,now+1);
   const bStart=dayStart(S.settings.start);
   const hasBase=now-bStart>=14*DAY;
   const base=stats(bStart,bStart+7*DAY);
@@ -319,14 +381,14 @@ function renderWeek(){
   </div></section>
   <section><h2>Shipped per week</h2><div class="card">${svg}</div></section>
   <section><h2>Review</h2><div class="card stack">
-    <p style="margin:0">${daysTo>0?`<b>${daysTo} days</b> until the three-month review on ${esc(fmtDate(review))}.`:`The review date (${esc(fmtDate(review))}) has passed. Judge by the markers above against week one, not by how this week felt.`}</p>
-    <p class="small muted" style="margin:0">Progress looks like fewer blown deadlines and faster recovery, not a sudden feeling of focus. Change the date in Setup.</p>
+    <p style="margin:0">${daysTo>0?`Your optional review is on ${esc(fmtDate(review))}, in ${daysTo} days.`:`Your review date was ${esc(fmtDate(review))}. You can reflect when you’re ready or choose another date in Setup.`}</p>
+    <p class="small muted" style="margin:0">These numbers are information, not a grade. Notice what helped you start, return, or finish. Change the review date in Setup.</p>
     <button data-action="copy">Copy weekly check-in text</button>
     <p class="small muted" style="margin:0">Paste it to whoever holds you accountable. The page can't send it for you.</p>
   </div></section>`;
 }
 function checkinText(){
-  const now=Date.now();const c=stats(now-7*DAY,now+DAY);const o=c.outcomes;
+  const now=Date.now();const c=stats(now-7*DAY,now+1);const o=c.outcomes;
   return `Week ending ${fmtDate(today())}: started ${c.started} tasks (${c.onDay} of ${c.planned} planned ones on the day planned), shipped ${c.shipped} (${c.inCap} inside the cap). Of shipped work with a follow-up: ${o.fine} fine, ${o.minor} minor fix, ${o.problem} real problem. ${c.spirals} spirals, median recovery ${fmtMin(c.recovery)}.`;
 }
 
@@ -341,22 +403,22 @@ function renderSetup(){
     <div class="row"><label class="f grow">Default time cap (min)<input type="number" id="s-cap" min="1" max="240" value="${s.cap}"></label>
     <label class="f grow">Movement before a task (min)<input type="number" id="s-ex" min="5" max="60" value="${s.exercise}"></label></div>
     <label class="f">Default "done means"<textarea id="s-done" rows="2">${esc(s.done)}</textarea></label>
-    <div class="row"><label class="f grow">Plan started<input type="date" id="s-start" value="${s.start}"></label>
-    <label class="f grow">Three-month review<input type="date" id="s-review" value="${s.review}"></label></div>
+    <div class="row"><label class="f grow">Plan started<input type="date" id="s-start" value="${esc(s.start)}"></label>
+    <label class="f grow">Three-month review<input type="date" id="s-review" value="${esc(s.review)}"></label></div>
   </div></section>
-  <section><h2>Reconsideration triggers</h2><div class="card ${anyT?'bad':''} stack">
-    <p class="small muted" style="margin:0">Decided in advance. Tick one when it happens; the page will keep showing it until you untick it.</p>
+  <details class="card"><summary>Personal support notes${anyT||anyR?' · saved selections':''}</summary>
+    <p class="small muted">Optional notes for a conversation with someone who supports you. Existing selections are kept here.</p>
     <div>${TRIGGERS.map(([k,l])=>`<label class="check"><input type="checkbox" data-trig="${k}" ${s.triggers[k]?'checked':''}><span>${l}</span></label>`).join('')}</div>
-    ${anyT?`<p style="margin:0"><b>This reopens the medication question.</b> That includes non-stimulants and occasional use, not only daily stimulants. Having the line written down is the opposite of drifting into indefinite suffering, which is the all-or-nothing pattern being treated. Book the conversation with a clinician who treats adult ADHD.</p>`:''}
-  </div></section>
-  <section><h2>Risk profile</h2><div class="card ${anyR?'warn':''} stack">
-    <p class="small muted" style="margin:0">The strongest evidence for medication is on real-world harms, not focus. It matters in proportion to these.</p>
     <div>${RISK.map(([k,l])=>`<label class="check"><input type="checkbox" data-risk="${k}" ${s.risk[k]?'checked':''}><span>${l}</span></label>`).join('')}</div>
-    ${anyR?`<p class="small" style="margin:0">In a 2025 Swedish registry study of 148,581 people, starting ADHD medication was associated with 17% fewer suicidal behaviours, 15% less substance misuse, 12% fewer transport accidents and 13% fewer criminal convictions. Observational, but no non-drug option has anything comparable. Worth one conversation before committing to avoidance.</p>`:''}
-  </div></section>
-  <section><h2>Data</h2><div class="card stack">
-    <p class="small muted" style="margin:0">${ref?'Saved privately to your account; only you can read it.':'Saved in this browser only. Sign in on claude.ai to keep it across devices.'}</p>
-    <div class="row"><button data-action="export">Copy all data as JSON</button><button class="danger" data-action="reset">Erase everything</button></div>
+    <p class="small muted">For optional exercises about perfectionism, see <a href="https://www.cci.health.wa.gov.au/Resources/Looking-After-Yourself/Perfectionism" target="_blank" rel="noopener noreferrer">CCI’s perfectionism resources</a>.</p>
+  </details>
+  <section><h2>Data &amp; privacy</h2><div class="card stack">
+    <p class="small muted" style="margin:0">Tasks and notes are saved in this browser only. There is no account sync. Clearing browser data removes them; download a backup to keep a copy or move devices.</p>
+    <p class="small muted" style="margin:0">Voice is optional. Your browser may send audio to its speech recognition provider. Ship Anyway does not run a speech server. Browser support varies.</p>
+    ${SR?'<button data-action="voicehelp">Voice commands &amp; privacy</button>':''}
+    <div class="row"><button data-action="export">Download backup</button><button data-action="import">Restore backup</button></div>
+    <button class="quiet" data-action="export-copy">Copy data as JSON</button>
+    <button class="danger" data-action="reset">Erase everything</button>
   </div></section>`;
 }
 
@@ -373,38 +435,35 @@ async function lockScreen(on){
   try{if(on&&!wake&&navigator.wakeLock){wake=await navigator.wakeLock.request('screen');wake.addEventListener('release',()=>{wake=null;});}
     else if(!on&&wake){await wake.release();wake=null;}}catch(e){wake=null;}
 }
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&S.active)lockScreen(true);});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')tick();else lockScreen(false);});
 function tick(){
-  clearInterval(timer);
-  const el=$('#clock');if(!el||!S.active){document.title='Ship Anyway';lockScreen(false);return;}
-  lockScreen(true);
-  const run=()=>{
-    const a=S.active;if(!a)return clearInterval(timer);
-    if(a.pausedAt){const c=$('#clock');if(c)c.textContent='paused';document.title='Paused · Ship Anyway';return;}
-    const left=a.ends-Date.now();
-    if(a.phase==='exercise'&&left<=0){S.events.push({t:'exercise',at:Date.now(),taskId:a.taskId});a.phase='work';a.ends=Date.now()+task(a.taskId).cap*60000;a.passes=1;chime();save();return;}
-    const abs=Math.abs(left);const m=Math.floor(abs/60000),s=Math.floor(abs%60000/1000);
-    const c=$('#clock');if(!c)return clearInterval(timer);
-    const txt=(left<0?'+':'')+pad(m)+':'+pad(s);
-    c.textContent=txt;
-    document.title=(left<0?'Time is up · ':txt+' · ')+'Ship Anyway';
-    if(left<0&&!c.classList.contains('over')){if(chimed!==a.ends){chimed=a.ends;chime();}render();}
-  };
-  run();timer=setInterval(run,1000);
+  const a=S.active,c=$('#clock');
+  if(!a){document.title='Ship Anyway';lockScreen(false);return;}
+  lockScreen(!a.pausedAt&&document.visibilityState==='visible');
+  if(a.pausedAt){if(c)c.textContent='paused';document.title='Paused · Ship Anyway';return;}
+  const left=a.ends-Date.now();
+  if(a.phase==='exercise'&&left<=0){
+    S.events.push({t:'exercise',at:Date.now(),taskId:a.taskId});a.phase='work';a.ends=Date.now()+task(a.taskId).cap*60000;a.passes=1;chime();save();return;
+  }
+  const seconds=Math.max(0,Math.ceil(left/1000)),txt=pad(Math.floor(seconds/60))+':'+pad(seconds%60);
+  if(c)c.textContent=txt;
+  document.title=(left<=0?'Time to check in · ':txt+' · ')+'Ship Anyway';
+  if(left<=0&&chimed!==a.ends){chimed=a.ends;chime();render();}
 }
 
 /* ---------- actions ---------- */
 let capPick=S.settings.cap;
-document.addEventListener('submit',e=>{if(e.target.id==='startform'){e.preventDefault();doStart();}});
+document.addEventListener('submit',e=>{if(e.target.id==='startform'){e.preventDefault();doStart(e.submitter?.value!=='focus');}});
 document.addEventListener('input',e=>{if(e.target.id==='t-custom'){const v=+e.target.value;if(v>=1&&v<=240)capPick=Math.round(v);}});
-function doStart(){
+function doStart(quick=true){
+  if(S.active)return;
   const now=Date.now();
-  const title=($('#t-title')?.value||'').trim()||'The thing I was avoiding';
+  const title=($('#t-title')?.value||'').trim()||'Take one small step';
   const done=($('#t-done')?.value||'').trim()||S.settings.done;
   const t={id:uid(),title,done,cap:capPick,created:now,planned:today(),started:null,shipped:null,passes:0,overtime:false,outcome:null};
   S.tasks.push(t);
-  const ex=!!$('#t-ex')?.checked;S.settings.exLast=ex;
-  primeAudio();begin(t,ex);
+  const ex=!quick&&!!$('#t-ex')?.checked;if(!quick)S.settings.exLast=ex;
+  primeAudio();begin(t,ex,quick);
 }
 document.addEventListener('click',e=>{
   const chip=e.target.closest('.chip[data-cap]');
@@ -419,41 +478,78 @@ document.addEventListener('click',e=>{
 });
 function handle(act,b){
   const id=b.dataset.id,now=Date.now();
-  if(act==='start'){/* handled by the form submit */}
-  else if(act==='talk'){listen();}
+  if(['skipex','morepass','revision-start','pause','ship','stop','saveplace','continuework'].includes(act)&&!S.active)return;
+  if(act==='talk'){if(S.settings.voiceConsent)listen();else showVoiceConsent();}
+  else if(act==='voice-enable'){S.settings.voiceConsent=true;closeDialog();save();listen();}
   else if(act==='plan'){
-    const title=($('#t-title')?.value||'').trim()||'The thing I was avoiding';
-    const done=($('#t-done')?.value||'').trim()||S.settings.done;
-    S.tasks.push({id:uid(),title,done,cap:capPick,created:now,planned:b.dataset.day,started:null,shipped:null,passes:0,overtime:false,outcome:null});
-    toast('Planned for '+(b.dataset.day===today()?'today':'tomorrow'));save();
+    const t=newTask(($('#t-title')?.value||'').trim()||'Take one small step');
+    t.done=($('#t-done')?.value||'').trim()||S.settings.done;t.cap=capPick;t.planned=b.dataset.day;
+    S.tasks.push(t);save();toast('Saved for '+(b.dataset.day===today()?'today':'tomorrow')+'.');
   }
-  else if(act==='startq'){const t=task(id);if(t){primeAudio();begin(t,false);}}
-  else if(act==='drop'){const t=task(id);if(t)t.dropped=true;save();}
-  else if(act==='skipex'){const a=S.active;a.phase='work';a.ends=now+task(a.taskId).cap*60000;a.passes=1;save();}
-  else if(act==='morepass'){const a=S.active;a.passes=2;a.ends=now+task(a.taskId).cap*60000;chimed=null;save();}
-  else if(act==='pause'){const a=S.active;if(a.pausedAt){a.ends+=now-a.pausedAt;a.pausedAt=null;}else{a.pausedAt=now;}save();}
-  else if(act==='ship'){const a=S.active,t=task(a.taskId);if(a.pausedAt){a.ends+=now-a.pausedAt;}t.shipped=now;t.passes=a.passes;t.overtime=now>a.ends;resolveSpiral(now);S.active=null;save();toast('Shipped. This page will ask tomorrow what happened.');}
-  else if(act==='stop'){const a=S.active,t=task(a.taskId);t.started=null;t.planned=today();S.active=null;save();}
-  else if(act==='outcome'){const t=task(id);t.outcome=b.dataset.v;t.outcomeAt=now;save();toast(b.dataset.v==='fine'?'Logged. One more data point against the fear.':'Logged. A fixable thing is not a catastrophe.');}
-  else if(act==='spiral'){S.events.push({t:'spiral',at:now,taskId:S.active?.taskId||null});save();showSpiral();}
-  else if(act==='back'){const step=($('#sp-step')?.value||'').trim();
-    if(!S.active&&step){S.tasks.push({id:uid(),title:step,done:S.settings.done,cap:15,created:now,planned:today(),started:null,shipped:null,passes:0,overtime:false,outcome:null});}
-    $('#overlay').hidden=true;$('#fab').hidden=false;save();if(!S.active&&step)toast('Added as a 15-minute task. Starting it ends the spiral clock.');}
-  else if(act==='closeov'){
-    // an accidental tap, closed within 10 s, is not a spiral
-    const last=S.events[S.events.length-1];
-    if(last&&last.t==='spiral'&&!last.recovered&&now-last.at<10000){S.events.pop();save();}
-    $('#overlay').hidden=true;$('#fab').hidden=false;}
+  else if(['startq','quickq','resumeq'].includes(act)){
+    const t=task(id);if(t&&!S.active&&!t.shipped){primeAudio();begin(t,false,true);}
+  }
+  else if(act==='drop'||act==='undrop'){const t=task(id);if(t){t.dropped=act==='drop';save();}}
+  else if(act==='skipex'||act==='continuework'){
+    const a=S.active;a.phase='work';a.quick=false;a.pausedAt=null;a.ends=now+task(a.taskId).cap*60000;a.passes=1;chimed=null;save();
+  }
+  else if(act==='morepass'){
+    if(S.active.passes>=2){toast('You can finish or save your place.');return;}
+    showDialog('One specific fix',`<p class="quote">What needs to change?</p><div class="done-line"><b>Done means</b>${esc(activeTask().done)}</div>
+      <label class="f">One fix to meet that definition<input id="revision-step" type="text" placeholder="Check the total on the invoice."></label>
+      <p class="small muted">Five minutes for this fix. Other improvements can wait.</p>
+      <button class="primary" data-action="revision-start">Start the final 5 minutes</button><button class="quiet" data-action="closeov">Cancel</button>`);
+  }
+  else if(act==='revision-start'){
+    const step=($('#revision-step')?.value||'').trim();if(!step){$('#revision-step')?.focus();toast('Name one specific fix first.');return;}
+    const a=S.active;if(a.passes>=2)return;activeTask().revision=step;a.quick=false;a.phase='work';a.passes=2;a.pausedAt=null;a.ends=now+5*60000;chimed=null;closeDialog();save();
+  }
+  else if(act==='pause'){const a=S.active;if(a.pausedAt){a.ends+=now-a.pausedAt;a.pausedAt=null;}else a.pausedAt=now;save();}
+  else if(act==='ship'){
+    const a=S.active,t=activeTask();if(a.pausedAt)a.ends+=now-a.pausedAt;
+    t.shipped=now;t.passes=a.passes;t.overtime=now>a.ends;t.savedAt=null;resolveSpiral(now);S.active=null;closeDialog();save();toast('Done. You can check in tomorrow if you want.');
+  }
+  else if(act==='stop'){showSavePlace();}
+  else if(act==='saveplace'){
+    const t=activeTask(),a=S.active;const step=($('#save-step')?.value||'').trim();t.nextStep=step;t.savedAt=now;
+    S.events.push({t:'saved',at:now,taskId:t.id,startedAt:a.startedAt,quick:!!a.quick});S.active=null;
+    closeDialog();const saved=save();toast(saved?'Your place is saved. Starting counts.':'Your place is kept in this tab. Download a backup to keep it.');
+  }
+  else if(act==='outcome'){
+    const t=task(id);if(!t)return;t.outcome=b.dataset.v;t.outcomeAt=now;save();
+    toast(b.dataset.v==='problem'?'Logged. You can make the next action a repair or a request for help.':b.dataset.v==='minor'?'Logged. A small fix can be its own next step.':'Logged. Thanks for checking in.');
+  }
+  else if(act==='checklater'||act==='skipcheck'){const t=task(id);if(t){if(act==='checklater')t.checkAfter=now+DAY;else t.skipCheck=true;save();}}
+  else if(act==='spiral'){showSpiral();}
+  else if(act==='stuck-small'){recordStuck();showSmallStep();}
+  else if(act==='stuck-polish'){recordStuck();showPolishing();}
+  else if(act==='stuck-break'){recordStuck();if(S.active)showSavePlace();else showDialog('Take a break','<p class="quote">It’s okay to pause.</p><p>Your saved tasks will be here when you’re ready.</p><button class="primary" data-action="closeov">Enough for now</button>');}
+  else if(act==='back'){
+    const step=($('#sp-step')?.value||'').trim();if(!step){$('#sp-step')?.focus();toast('Name one small action first.');return;}
+    let t=activeTask();if(!t){t=newTask(step);S.tasks.push(t);}t.nextStep=step;
+    closeDialog();primeAudio();begin(t,false,true);
+  }
+  else if(act==='closeov'){pendingRestore=null;closeDialog();}
   else if(act==='voicehelp'){showVoiceHelp();}
   else if(act==='copy'){copy(checkinText());}
-  else if(act==='export'){copy(JSON.stringify(S,null,2));}
+  else if(act==='export'){exportData();}
+  else if(act==='export-original'&&protectedRaw!==null){download(protectedRaw,'ship-anyway-original.json');}
+  else if(act==='export-copy'){copy(JSON.stringify(S,null,2));}
+  else if(act==='import'){$('#restore-file').click();}
+  else if(act==='restore-confirm'){restoreBackup();}
   else if(act==='reset'){
-    if(b.dataset.sure){try{localStorage.removeItem(KEY);}catch(e){}S=defaults();save();toast('Erased.');}
-    else{b.dataset.sure='1';b.textContent='Tap again to erase everything';}
+    showDialog('Erase everything',`<p class="quote">Erase everything in this browser?</p><p>This removes your tasks, history, notes and settings. Download a backup first if you want to keep them.</p>
+      <button data-action="export">Download current work</button>${protectedRaw!==null?'<button data-action="export-original">Download original saved data</button>':''}
+      <button class="danger" data-action="reset-confirm">Erase all data</button><button class="quiet" data-action="closeov">Cancel</button>`);
+  }
+  else if(act==='reset-confirm'){
+    const fresh=defaults();try{localStorage.setItem(KEY,JSON.stringify(fresh));}catch(e){toast('Could not erase browser data. Nothing has changed.');return;}
+    S=fresh;capPick=S.settings.cap;protectStorage=false;protectedRaw=null;storageError='';closeDialog();storageStatus();render();toast('Data erased.');
   }
 }
+function newTask(title){return {id:uid(),title,done:S.settings.done,cap:S.settings.cap,created:Date.now(),planned:today(),started:null,shipped:null,passes:0,overtime:false,outcome:null};}
 
-/* ---------- voice: push-to-talk, fixed commands, no server ---------- */
+/* ---------- voice: optional browser-provider recognition ---------- */
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 let rec=null,listening=false;
 function speak(t){try{if(!window.speechSynthesis)return;speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.rate=1.05;speechSynthesis.speak(u);}catch(e){}}
@@ -466,7 +562,7 @@ function listen(){
   rec.onstart=()=>{listening=true;btn.textContent='Listening…';btn.classList.add('live');};
   rec.onend=()=>{listening=false;btn.textContent='Talk';btn.classList.remove('live');};
   rec.onerror=e=>{listening=false;btn.textContent='Talk';btn.classList.remove('live');
-    toast(e.error==='not-allowed'?'Microphone blocked. On the claude.ai copy of this page voice is not available; use the hosted copy.':e.error==='no-speech'?'Heard nothing.':'Voice error: '+e.error);};
+    toast(e.error==='not-allowed'?'Microphone blocked. You can allow it in your browser settings or use the buttons.':e.error==='no-speech'?'Heard nothing.':'Voice error: '+e.error);};
   rec.onresult=e=>{const alts=[...e.results[0]].map(r=>r.transcript.trim());let reply=null;
     for(const a of alts){reply=command(a);if(reply!==null){toast('“'+a+'”');break;}}
     if(reply===null){reply='I didn’t catch a command. Try: start, ship it, pause, spiraling.';toast('“'+alts[0]+'” — not a command');}
@@ -480,33 +576,34 @@ function command(raw){
   const t=raw.toLowerCase().replace(/[.,!?]/g,'').trim();
   const a=S.active;
   if(/^(ship( it)?|done|shipped|send it|it's done)$/.test(t)){if(!a)return 'Nothing is running.';handle('ship',{dataset:{}});return 'Shipped.';}
-  if(/^(pause|hold on|resume|unpause|continue)$/.test(t)){if(!a||a.phase!=='work')return 'Nothing to pause.';handle('pause',{dataset:{}});return a.pausedAt?'Paused.':'Running.';}
-  if(/(one )?more pass|another pass/.test(t)){if(!a)return 'Nothing is running.';if(a.passes>=2)return 'That was the last pass. Ship it.';handle('morepass',{dataset:{}});return 'Last pass. '+task(a.taskId).cap+' minutes.';}
-  if(/spiral|spiraling|i can't do this|help me|i'm stuck|im stuck/.test(t)){handle('spiral',{dataset:{}});return 'This is the pattern, not a verdict. What is the smallest next step?';}
+  if(/^(pause|hold on|resume|unpause|continue)$/.test(t)){if(!a)return 'Nothing to pause.';const wantPause=/^(pause|hold on)$/.test(t);if(wantPause!==!!a.pausedAt)handle('pause',{dataset:{}});return a.pausedAt?'Paused.':'Running.';}
+  if(/(one )?more pass|another pass/.test(t)){if(!a)return 'Nothing is running.';if(a.passes>=2)return 'That was the last pass. You can finish or save your place.';handle('morepass',{dataset:{}});return 'Name one specific fix for the final five minutes.';}
+  if(/spiral|spiraling|i can't do this|help me|i'm stuck|im stuck/.test(t)){handle('spiral',{dataset:{}});return 'Choose what would help: a smaller step, a stopping point, or a break.';}
   if(/^(back to it|back|okay|ok|close)$/.test(t)){if(!$('#overlay').hidden){handle($('#sp-step')?'back':'closeov',{dataset:{}});return 'Back to it.';}return null;}
   if(/^(skip|skip (the )?(movement|exercise|warm ?up))$/.test(t)){if(a&&a.phase==='exercise'){handle('skipex',{dataset:{}});return 'Clock started.';}return 'No movement timer running.';}
-  if(/^(stop|not now|cancel|quit)$/.test(t)){if(!a)return 'Nothing is running.';handle('stop',{dataset:{}});return 'Stopped. It stays in today’s plan.';}
+  if(/^(stop|not now|cancel|quit)$/.test(t)){if(!a)return 'Nothing is running.';handle('stop',{dataset:{}});return 'Add an optional next step, then save your place.';}
   if(/nothing bad|went fine|it was fine|minor fix|small fix|real problem|went badly/.test(t)){
-    const due=S.tasks.filter(x=>x.shipped&&!x.outcome&&Date.now()-x.shipped>12*3600000)[0];if(!due)return 'No check-in is waiting.';
+    const due=dueTasks()[0];if(!due)return 'No check-in is waiting.';
     const v=/nothing bad|fine/.test(t)?'fine':/minor|small/.test(t)?'minor':'problem';handle('outcome',{dataset:{id:due.id,v}});return 'Logged for '+due.title+'.';}
   if(/^(how am i doing|status|this week|week|progress)$/.test(t)){const c=stats(Date.now()-7*DAY,Date.now()+DAY);
     return `This week: ${c.shipped} shipped, ${c.onDay} of ${c.planned} started on the day planned, ${c.spirals} spirals. Shipped imperfect and fine: ${c.outcomes.fine}.`;}
-  if(/^(what('s| is) left|time|how long|time left)$/.test(t)){if(!a)return 'Nothing is running.';if(a.pausedAt)return 'Paused.';const left=Math.round((a.ends-Date.now())/60000);return left>=0?left+' minutes left.':'Time is up, '+(-left)+' minutes over. Ship it.';}
+  if(/^(what('s| is) left|time|how long|time left)$/.test(t)){if(!a)return 'Nothing is running.';if(a.pausedAt)return 'Paused.';const left=Math.round((a.ends-Date.now())/60000);return left>=0?left+' minutes left.':'Time is up, '+(-left)+' minutes over. You can finish or save your place.';}
   let m=t.match(/^(?:plan|add|queue)\s+(.+?)(?:\s+for\s+(today|tomorrow))?$/);
   if(m){const day=m[2]==='tomorrow'?dayKey(Date.now()+DAY):today();const title=m[1].replace(/\s+for\s+\d+\s*min(ute)?s?$/,'');
-    S.tasks.push({id:uid(),title:cap1(title),done:S.settings.done,cap:minutesIn(t)||S.settings.cap,created:Date.now(),planned:day,started:null,shipped:null,passes:0,overtime:false,outcome:null});save();return 'Planned for '+(m[2]||'today')+'.';}
+    S.tasks.push({id:uid(),title:cap1(title),done:S.settings.done,cap:Math.max(1,Math.min(240,minutesIn(t)||S.settings.cap)),created:Date.now(),planned:day,started:null,shipped:null,passes:0,overtime:false,outcome:null});save();return 'Planned for '+(m[2]||'today')+'.';}
   m=t.match(/^(?:start|begin|go)(?:\s+(?:on|with))?\s*(.*)$/);
   if(m){if(a)return 'Something is already running. Ship it or stop it first.';
-    const mins=minutesIn(t)||capPick||S.settings.cap;const ex=/\b(move|exercise|workout|warm ?up) first\b/.test(t);
+    const mins=minutesIn(t)||2;const ex=/\b(move|exercise|workout|warm ?up) first\b/.test(t);
     let title=m[1].replace(/\b(for|with)?\s*(\d+|[a-z]+(?:[ -][a-z]+)?)\s*(min|minute|minutes)\b/,'').replace(/\b(move|exercise|workout|warm ?up) first\b/,'').replace(/\s+/g,' ').trim();
-    if(!title||/^(the clock|clock|timer|a timer|the timer)$/.test(title))title='The thing I was avoiding';
-    const tk={id:uid(),title:cap1(title),done:S.settings.done,cap:Math.max(1,Math.min(240,mins)),created:Date.now(),planned:today(),started:null,shipped:null,passes:0,overtime:false,outcome:null};
-    S.tasks.push(tk);S.settings.exLast=ex;begin(tk,ex);return (ex?'Move first, then ':'')+tk.cap+' minutes on '+tk.title+'.';}
+    if(!title||/^(the clock|clock|timer|a timer|the timer)$/.test(title))title='Take one small step';
+    const quick=mins===2&&!ex;
+    const tk={id:uid(),title:cap1(title),done:S.settings.done,cap:quick?S.settings.cap:Math.max(1,Math.min(240,mins)),created:Date.now(),planned:today(),started:null,shipped:null,passes:0,overtime:false,outcome:null};
+    S.tasks.push(tk);S.settings.exLast=ex;begin(tk,ex,quick);return (ex?'Move first, then ':'')+(quick?2:tk.cap)+' minutes on '+tk.title+'.';}
   return null;
 }
 const cap1=s=>s.charAt(0).toUpperCase()+s.slice(1);
 function showVoiceHelp(){
-  $('#overlay').innerHTML=`<div class="card stack" role="dialog" aria-label="Voice commands">
+  showDialog('Voice commands',`<div class="stack">
     <p class="quote">Tap Talk, then say one of these.</p>
     <ul class="plain small">
       <li><span>“Start the proposal for 45 minutes”<br><span class="muted">title and cap optional; add “move first” for the warm-up</span></span></li>
@@ -515,20 +612,22 @@ function showVoiceHelp(){
       <li><span>“Nothing bad” · “Minor fix” · “Real problem”<br><span class="muted">answers the waiting check-in</span></span></li>
       <li><span>“Plan the invoice for tomorrow” · “Time left” · “How am I doing”</span></li>
     </ul>
-    <p class="small muted" style="margin:0">Runs in your browser; nothing is sent anywhere. Chrome, Edge and Safari only. Not available inside claude.ai, which blocks the microphone.</p>
-    <button class="quiet" data-action="closeov">Close</button></div>`;
-  $('#overlay').hidden=false;$('#fab').hidden=true;
+    <p class="small muted" style="margin:0">Your browser may send audio to its speech recognition provider. Voice is optional and browser support varies. Task data stays in this browser.</p>
+    <button class="quiet" data-action="closeov">Close</button></div>`);
 }
-function begin(t,withEx){
-  const now=Date.now();t.started=now;
+function begin(t,withEx,quick=false){
+  const now=Date.now(),resuming=!!t.started;
+  if(!t.started)t.started=now;
   if(!t.planned)t.planned=today();
-  resolveSpiral(now);
+  if(resuming)S.events.push({t:'resumed',at:now,taskId:t.id});
+  t.savedAt=null;t.dropped=false;resolveSpiral(now);
   const ex=withEx?S.settings.exercise:0;
-  S.active={taskId:t.id,phase:ex?'exercise':'work',ends:now+(ex?ex:t.cap)*60000,passes:ex?0:1,startedAt:now};
-  save();
+  S.active={taskId:t.id,phase:ex?'exercise':'work',ends:now+(ex?ex:quick?2:t.cap)*60000,passes:ex?0:1,startedAt:now,quick};
+  chimed=null;location.hash='now';save();
 }
 document.addEventListener('change',e=>{
   const el=e.target,s=S.settings;
+  if(el.id==='restore-file'){prepareRestore(el.files[0]);el.value='';return;}
   if(el.id==='s-cap'){s.cap=Math.max(1,Math.min(240,+el.value||25));capPick=s.cap;}
   else if(el.id==='s-ex')s.exercise=Math.max(5,Math.min(60,+el.value||20));
   else if(el.id==='s-done')s.done=el.value.trim()||s.done;
@@ -539,20 +638,66 @@ document.addEventListener('change',e=>{
   else return;
   save();
 });
+let dialogReturnFocus=null,dialogPausedSession=null;
+function showDialog(label,content){
+  clearTimeout(toastT);$('#toast').hidden=true;
+  if($('#overlay').hidden){
+    dialogReturnFocus=document.activeElement;
+    // Reading a rescue prompt should not consume the work timer.
+    if(S.active&&!S.active.pausedAt){dialogPausedSession=S.active;S.active.pausedAt=Date.now();save();}
+  }
+  $('#overlay').innerHTML=`<div class="card stack" role="dialog" aria-modal="true" aria-label="${esc(label)}" tabindex="-1">${content}</div>`;
+  $('#overlay').hidden=false;$('.wrap').inert=true;$('#fab').hidden=true;$('#talk').hidden=true;
+  const focus=$('#overlay').querySelector('input:not([type=checkbox]),textarea,button,[tabindex]');focus?.focus();
+}
+function closeDialog(){
+  if($('#overlay').hidden)return;
+  $('#overlay').hidden=true;$('.wrap').inert=false;$('#fab').hidden=false;$('#talk').hidden=!SR;
+  if(dialogPausedSession&&S.active===dialogPausedSession&&S.active.pausedAt){S.active.ends+=Date.now()-S.active.pausedAt;S.active.pausedAt=null;save();}
+  dialogPausedSession=null;
+  if(dialogReturnFocus?.isConnected&&!dialogReturnFocus.closest('[hidden]'))dialogReturnFocus.focus();else $('#fab').focus();
+}
+document.addEventListener('keydown',e=>{
+  if($('#overlay').hidden)return;
+  if(e.key==='Escape'){e.preventDefault();pendingRestore=null;closeDialog();return;}
+  if(e.key==='Tab'){
+    const items=[...$('#overlay').querySelectorAll('button,input,textarea,a[href],summary')].filter(el=>!el.disabled&&el.getClientRects().length);
+    if(!items.length)return;
+    const first=items[0],last=items[items.length-1];
+    if(e.shiftKey&&(document.activeElement===first||!items.includes(document.activeElement))){e.preventDefault();last.focus();}
+    else if(!e.shiftKey&&(document.activeElement===last||!items.includes(document.activeElement))){e.preventDefault();first.focus();}
+  }
+});
+function recordStuck(){if(!openSpiral()){S.events.push({t:'spiral',at:Date.now(),taskId:S.active?.taskId||null});save();}}
 function showSpiral(){
-  const t=activeTask()||[...S.tasks].reverse().find(x=>x.shipped);
-  const all=S.tasks.filter(x=>x.outcome);const o=outcomes(all);
-  $('#overlay').innerHTML=`<div class="card stack" role="dialog" aria-label="Spiraling">
-    <p class="quote">This is the ADHD pattern, not a verdict on you.</p>
-    <p style="margin:0">People with ADHD don't set higher standards than anyone else. They judge themselves far more harshly for falling short of ordinary ones. That judgment is the thing being treated, and it's what you're feeling now.</p>
-    ${t?`<div class="done-line"><b>The standard you actually set</b>${esc(t.done)}</div>`:''}
-    ${all.length?`<p style="margin:0"><b>${o.fine} of ${all.length}</b> things you shipped imperfect turned out fine.</p>`:''}
-    <p style="margin:0">Falling short was always allowed. The next move is small on purpose.</p>
-    <label class="f">${S.active?'What is the smallest next step?':'Smallest next step (becomes a 15-minute task)'}<input type="text" id="sp-step" autocomplete="off" placeholder="Open the file. Write one bad sentence."></label>
-    <button class="primary" data-action="back">${S.active?'Back to it':'Add it and close'}</button>
-    <button class="quiet" data-action="closeov">Close</button>
-  </div>`;
-  $('#overlay').hidden=false;$('#fab').hidden=true;setTimeout(()=>$('#sp-step')?.focus(),50);
+  showDialog('I’m stuck',`<p class="quote">What would help right now?</p>
+    <button data-action="stuck-small">It feels too big</button>
+    <button data-action="stuck-polish">I keep polishing</button>
+    <button data-action="stuck-break">I’m overwhelmed</button>
+    <details><summary>More support</summary><p>You don’t have to solve the whole task now. One small action, a clear stopping point, or a break is enough to choose.</p></details>
+    <button class="quiet" data-action="closeov">Back</button>`);
+}
+function showSmallStep(){
+  showDialog('One smaller step',`<p class="quote">Make the next step tiny.</p>
+    <label class="f">What could you do in two minutes?<input type="text" id="sp-step" placeholder="Open the file. Write one sentence." value="${esc(activeTask()?.nextStep||'')}" autocomplete="off"></label>
+    <button class="primary" data-action="back">Start this step · 2 minutes</button><button class="quiet" data-action="closeov">Back</button>`);
+}
+function showPolishing(){
+  const t=activeTask();
+  showDialog('A stopping point',`<p class="quote">Check the standard you set.</p>
+    <div class="done-line"><b>Done means</b>${esc(t?.done||S.settings.done)}</div>
+    <p>Does the work meet this? Extra polish can wait.</p>
+    ${t?'<button class="primary" data-action="ship">Yes — task is done</button><button data-action="stop">Save a next step for later</button>':'<button class="primary" data-action="stuck-small">Choose one small step</button>'}
+    <button class="quiet" data-action="closeov">Back</button>`);
+}
+function showSavePlace(){
+  const t=activeTask();if(!t)return;
+  showDialog('Save my place',`<p class="quote">You can stop here.</p><p style="margin:0">${esc(t.title)}</p>
+    <label class="f">Next time, start by… (optional)<input type="text" id="save-step" value="${esc(t.nextStep||'')}" placeholder="Adding the price to paragraph two." autocomplete="off"></label>
+    <button class="primary" data-action="saveplace">Save my place</button><button class="quiet" data-action="closeov">Keep going</button>`);
+}
+function showVoiceConsent(){
+  showDialog('Optional voice input',`<p class="quote">Use your voice?</p><p>Your browser may send microphone audio to its speech recognition provider. All tasks can also be managed with the buttons.</p><button class="primary" data-action="voice-enable">Enable voice &amp; listen</button><button class="quiet" data-action="closeov">Use buttons</button>`);
 }
 async function copy(text){
   try{await navigator.clipboard.writeText(text);toast('Copied.');}
@@ -562,7 +707,7 @@ let toastT=null;
 function toast(msg){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,3500);}
 if(SR)$('#talk').hidden=false;
 window.shipAnyway={command};
-render();
+storageStatus();render();timer=setInterval(tick,1000);
 })();
 </script>
 
