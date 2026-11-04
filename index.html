@@ -1,0 +1,570 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0F7A66">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Ship Anyway</title>
+</head>
+<body>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: one 560px column, phone-first. One primary action on screen at a time; a floating "Spiraling" button always within thumb reach. */
+:root{
+  --bg:#F1F4F6; --surface:#FFFFFF; --soft:#E6ECF1; --line:#D5DCE3;
+  --ink:#16212C; --muted:#5B6A79;
+  --go:#0F7A66; --go-ink:#FFFFFF; --go-soft:#DCEFE9;
+  --warn:#A8701A; --warn-bg:#FBF1DD;
+  --bad:#B0393B; --bad-bg:#F9E6E6;
+  --font-display:"Archivo","Helvetica Neue",Arial,sans-serif;
+  --font-body:"IBM Plex Sans","Segoe UI",Roboto,sans-serif;
+  --font-mono:"IBM Plex Mono","SFMono-Regular",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#0E1317; --surface:#161D24; --soft:#1F2932; --line:#2A3540;
+  --ink:#E4EAF0; --muted:#8E9CAA;
+  --go:#38B897; --go-ink:#06231C; --go-soft:#173A32;
+  --warn:#E2A94C; --warn-bg:#33281A;
+  --bad:#E07070; --bad-bg:#3A2020;
+  color-scheme:dark; } }
+:root[data-theme="dark"]{
+  --bg:#0E1317; --surface:#161D24; --soft:#1F2932; --line:#2A3540;
+  --ink:#E4EAF0; --muted:#8E9CAA;
+  --go:#38B897; --go-ink:#06231C; --go-soft:#173A32;
+  --warn:#E2A94C; --warn-bg:#33281A;
+  --bad:#E07070; --bad-bg:#3A2020;
+  color-scheme:dark; }
+
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:16px;line-height:1.45;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px 128px}
+.wrap{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+h1{font-family:var(--font-display);font-weight:800;font-size:22px;letter-spacing:-.01em;margin:0}
+.sync{font-size:12px;color:var(--muted)}
+nav{display:flex;gap:4px;background:var(--soft);padding:4px;border-radius:10px}
+nav a{flex:1;text-align:center;text-decoration:none;color:var(--muted);font-weight:600;font-size:14px;padding:8px;border-radius:7px}
+nav a[aria-current="page"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+h2{font-family:var(--font-display);font-weight:600;font-size:15px;letter-spacing:.02em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px}
+.card.go{border-color:var(--go);background:var(--go-soft)}
+.card.warn{border-color:var(--warn);background:var(--warn-bg)}
+.card.bad{border-color:var(--bad);background:var(--bad-bg)}
+.stack{display:flex;flex-direction:column;gap:12px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.row>*{min-width:0}
+.grow{flex:1 1 160px}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);font-weight:500}
+input[type=text],input[type=date],input[type=number],textarea{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:10px 12px;width:100%}
+textarea{resize:vertical;min-height:44px}
+input:focus-visible,button:focus-visible,a:focus-visible,textarea:focus-visible{outline:2px solid var(--go);outline-offset:2px}
+button{font:inherit;font-weight:600;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:10px;padding:10px 14px;cursor:pointer}
+button.primary{background:var(--go);color:var(--go-ink);border-color:var(--go);font-size:17px;padding:14px 18px;width:100%}
+button.quiet{background:transparent;color:var(--muted)}
+button.danger{border-color:var(--bad);color:var(--bad)}
+button:disabled{opacity:.5;cursor:default}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 12px;font-size:14px;font-weight:600;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+.title{font-family:var(--font-display);font-weight:800;font-size:20px;line-height:1.2;text-wrap:balance;margin:0}
+.clock{font-family:var(--font-mono);font-weight:500;font-size:56px;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums;margin:6px 0}
+.clock.over{color:var(--warn)}
+.done-line{border-left:3px solid var(--go);padding:4px 0 4px 12px;margin:4px 0}
+.done-line b{display:block;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+ul.plain{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+ul.plain li{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--soft);border-radius:10px}
+ul.plain li span{min-width:0;overflow-wrap:anywhere}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+@media (max-width:420px){.tiles{grid-template-columns:1fr 1fr}}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px}
+.tile .n{font-family:var(--font-display);font-weight:800;font-size:28px;line-height:1;font-variant-numeric:tabular-nums}
+.tile .l{font-size:12px;color:var(--muted);margin-top:4px}
+.tile .b{font-size:12px;color:var(--muted);margin-top:6px;border-top:1px dashed var(--line);padding-top:6px}
+.bar{display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--soft)}
+.bar i{display:block;height:100%}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-top:6px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:middle}
+svg.chart{width:100%;height:auto;display:block;max-width:100%}
+.fab{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));background:var(--warn);color:#1B1200;border:none;border-radius:999px;padding:14px 18px;font-weight:700;box-shadow:0 6px 18px rgba(0,0,0,.18);z-index:5}
+.fab.talk{right:auto;left:max(16px,env(safe-area-inset-left,0px));background:var(--surface);color:var(--ink);border:1px solid var(--line)}
+.fab.talk.live{background:var(--bad);color:#fff;border-color:var(--bad)}
+.overlay{position:fixed;inset:0;background:rgba(10,14,18,.6);display:flex;align-items:flex-end;justify-content:center;padding:16px;z-index:20}
+.overlay .card{width:100%;max-width:560px;max-height:90%;overflow:auto}
+.quote{font-family:var(--font-display);font-weight:600;font-size:19px;line-height:1.3;text-wrap:balance;margin:0 0 10px}
+.check{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--line)}
+.check:first-of-type{border-top:none}
+.check input{margin-top:4px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(80px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 14px;border-radius:10px;font-size:14px;z-index:30}
+@media (prefers-reduced-motion:no-preference){.toast{animation:up .2s ease-out}@keyframes up{from{opacity:0;transform:translate(-50%,8px)}}}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Ship Anyway</h1>
+    <span class="sync" id="sync">saving on this device</span>
+  </header>
+  <nav id="nav">
+    <a href="#now" data-view="now">Now</a>
+    <a href="#week" data-view="week">Week</a>
+    <a href="#setup" data-view="setup">Setup</a>
+  </nav>
+  <main id="view" class="stack"></main>
+</div>
+<button class="fab" id="fab" data-action="spiral">Spiraling</button>
+<button class="fab talk" id="talk" data-action="talk" hidden>Talk</button>
+<div id="overlay" class="overlay" hidden></div>
+<div id="toast" class="toast" hidden></div>
+
+<script>
+(function(){
+'use strict';
+const KEY='shipanyway.v1';
+const DAY=86400000;
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const pad=n=>String(n).padStart(2,'0');
+function dayKey(t){const d=new Date(t);return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
+function dayStart(key){const [y,m,d]=key.split('-').map(Number);return new Date(y,m-1,d).getTime();}
+const today=()=>dayKey(Date.now());
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+function fmtDate(key){const d=new Date(dayStart(key));return d.toLocaleDateString(undefined,{month:'short',day:'numeric'});}
+function median(a){if(!a.length)return null;const s=[...a].sort((x,y)=>x-y);const m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2;}
+function fmtMin(m){if(m==null)return '–';if(m<60)return Math.round(m)+' min';return (m/60).toFixed(1)+' h';}
+function relDay(t){const k=dayKey(t);if(k===today())return 'today';if(k===dayKey(Date.now()-DAY))return 'yesterday';return 'on '+fmtDate(k);}
+const DONE_PRESETS=['A first draft exists.','It has been sent to one person.','It is good enough to stop.'];
+
+function defaults(){
+  const t=Date.now();
+  return {v:1,updated:t,tasks:[],events:[],active:null,
+    settings:{cap:25,done:'A version exists that another person could look at.',exercise:20,
+      start:today(),review:dayKey(t+90*DAY),triggers:{},risk:{}}};
+}
+let S=defaults();
+try{const raw=localStorage.getItem(KEY);if(raw){const p=JSON.parse(raw);if(p&&p.v===1)S=Object.assign(defaults(),p);}}catch(e){}
+
+/* ---------- persistence ---------- */
+let ref=null,writing=false,dirty=false;
+function save(){
+  S.updated=Date.now();
+  // keep the document small: prune old resolved events and old tasks
+  const cutoff=Date.now()-200*DAY;
+  S.events=S.events.filter(e=>e.at>cutoff).slice(-600);
+  S.tasks=S.tasks.filter(t=>t.created>cutoff).slice(-500);
+  try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}
+  dirty=true;flush();render();
+}
+async function flush(){
+  if(!ref||writing||!dirty)return;
+  writing=true;dirty=false;
+  try{await ref.set(JSON.parse(JSON.stringify(S)));setSync('synced');}
+  catch(e){setSync('saving on this device');}
+  writing=false;if(dirty)flush();
+}
+function setSync(t){$('#sync').textContent=t;}
+(async()=>{
+  try{
+    const user=await window.claude?.use?.('user');const db=await window.claude?.use?.('db');
+    if(!user||!db)return;
+    const id=await user.id();if(!id)return;
+    ref=db.doc('data/users/'+id+'/state');
+    const snap=await ref.get();
+    if(snap.exists){const r=snap.data();if((r.updated||0)>(S.updated||0)){S=Object.assign(defaults(),r);try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}render();}else if(S.tasks.length||S.events.length){dirty=true;flush();}}
+    else{dirty=true;flush();}
+    setSync('synced');
+    ref.onSnapshot(s=>{if(!s.exists||s.metadata.hasPendingWrites)return;const r=s.data();if((r.updated||0)>(S.updated||0)){S=Object.assign(defaults(),r);try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}render();}},()=>setSync('saving on this device'));
+  }catch(e){}
+})();
+
+/* ---------- derived ---------- */
+const task=id=>S.tasks.find(t=>t.id===id);
+const activeTask=()=>S.active?task(S.active.taskId):null;
+function openSpiral(){return [...S.events].reverse().find(e=>e.t==='spiral'&&!e.recovered);}
+function resolveSpiral(now){const e=openSpiral();if(e)e.recovered=now;}
+function outcomes(tasks){const o={fine:0,minor:0,problem:0};tasks.forEach(t=>{if(t.outcome)o[t.outcome]++;});return o;}
+function stats(from,to){
+  const inR=t=>t>=from&&t<to;
+  const planned=S.tasks.filter(t=>t.planned&&inR(dayStart(t.planned)));
+  const onDay=planned.filter(t=>t.started&&dayKey(t.started)===t.planned);
+  const shipped=S.tasks.filter(t=>t.shipped&&inR(t.shipped));
+  const inCap=shipped.filter(t=>!t.overtime);
+  const started=S.tasks.filter(t=>t.started&&inR(t.started));
+  const spirals=S.events.filter(e=>e.t==='spiral'&&inR(e.at));
+  const rec=spirals.filter(e=>e.recovered).map(e=>(e.recovered-e.at)/60000);
+  return {planned:planned.length,onDay:onDay.length,shipped:shipped.length,inCap:inCap.length,started:started.length,
+    spirals:spirals.length,recovery:median(rec),outcomes:outcomes(shipped)};
+}
+const pct=(a,b)=>b?Math.round(100*a/b)+'%':'–';
+
+/* ---------- routing ---------- */
+function route(){
+  const h=(location.hash||'#now').slice(1);
+  const v=['now','week','setup'].includes(h)?h:'now';
+  document.querySelectorAll('#nav a').forEach(a=>a.setAttribute('aria-current',a.dataset.view===v?'page':'false'));
+  return v;
+}
+function render(){
+  const v=route();
+  $('#view').innerHTML=v==='week'?renderWeek():v==='setup'?renderSetup():renderNow();
+  if(v==='now')tick();
+}
+window.addEventListener('hashchange',render);
+
+/* ---------- NOW ---------- */
+function renderNow(){
+  const parts=[];
+  const act=activeTask();
+  // follow-ups due
+  const due=S.tasks.filter(t=>t.shipped&&!t.outcome&&Date.now()-t.shipped>12*3600000).slice(0,3);
+  if(due.length&&!act){
+    parts.push(`<section><h2>Check-in</h2><div class="stack">`+due.map(t=>`
+      <div class="card"><p class="muted small" style="margin:0 0 4px">You shipped this ${esc(relDay(t.shipped))}. What actually happened?</p>
+      <p class="title" style="font-size:17px">${esc(t.title)}</p>
+      <div class="row" style="margin-top:10px">
+        <button class="grow" data-action="outcome" data-id="${t.id}" data-v="fine">Nothing bad</button>
+        <button class="grow" data-action="outcome" data-id="${t.id}" data-v="minor">Minor fix</button>
+        <button class="grow" data-action="outcome" data-id="${t.id}" data-v="problem">Real problem</button>
+      </div></div>`).join('')+`</div></section>`);
+  }
+  if(act){
+    const a=S.active;
+    if(a.phase==='exercise'){
+      parts.push(`<section><div class="card go stack">
+        <p class="muted small" style="margin:0">Move first. Hard enough that talking is work. The clock for the task starts by itself when this ends.</p>
+        <div class="clock" id="clock">--:--</div>
+        <p class="title" style="font-size:17px">Next: ${esc(act.title)}</p>
+        <div class="row"><button class="grow" data-action="skipex">Skip to the task</button><button class="quiet" data-action="stop">Not now</button></div>
+      </div></section>`);
+    }else{
+      const paused=!!a.pausedAt;
+      const over=!paused&&Date.now()>a.ends;
+      const lastPass=a.passes>=2;
+      const longOver=over&&Date.now()-a.ends>30*60000;
+      parts.push(`<section><div class="card ${over?'warn':'go'} stack">
+        <div class="row" style="justify-content:space-between"><span class="small muted">Pass ${a.passes} of 2 · cap ${act.cap} min</span><span class="small muted" id="overlabel">${paused?'Paused':over?'Time is up':''}</span></div>
+        <div class="clock ${over?'over':''}" id="clock">--:--</div>
+        <p class="title">${esc(act.title)}</p>
+        <div class="done-line"><b>Done means</b>${esc(act.done)}</div>
+        ${over?`<p class="small" style="margin:0">The cap is the standard, not the quality. ${lastPass?'That was the last pass.':'One more pass is allowed, then it ships.'}${longOver?' Still counts if you ship it now.':''}</p>`:''}
+        <button class="primary" data-action="ship">Ship it</button>
+        <div class="row">
+          ${(over&&!lastPass)?`<button class="grow" data-action="morepass">One more pass (last)</button>`:''}
+          ${!over?`<button class="grow" data-action="pause">${paused?'Resume':'Pause'}</button>`:''}
+          <button class="quiet" data-action="stop">Not now</button>
+        </div>
+      </div></section>`);
+    }
+  }else{
+    const s=S.settings;
+    const firstRun=!S.events.some(e=>e.t==='spiral');
+    const queued=S.tasks.filter(t=>!t.started&&!t.shipped&&!t.dropped).sort((x,y)=>(x.planned||'9').localeCompare(y.planned||'9'));
+    parts.push(`<section><h2>Start</h2><form class="card stack" id="startform">
+      <label class="f">What are you starting?<input type="text" id="t-title" placeholder="One line is enough. Enter starts the clock." autocomplete="off"></label>
+      <label class="f">Done means<textarea id="t-done" rows="2">${esc(s.done)}</textarea></label>
+      <div class="chips">${DONE_PRESETS.map(p=>`<button type="button" class="chip" data-done="${esc(p)}">${esc(p.replace(/\.$/,''))}</button>`).join('')}</div>
+      <div class="f"><span>Time cap</span><div class="chips" id="caps">${[15,25,45,60].map(c=>`<button type="button" class="chip" data-cap="${c}" aria-pressed="${c===capPick}">${c} min</button>`).join('')}<button type="button" class="chip" data-cap="custom" aria-pressed="${![15,25,45,60].includes(capPick)}">Custom</button>
+        <input type="number" id="t-custom" min="1" max="240" inputmode="numeric" aria-label="Custom cap in minutes" style="width:5.5em;padding:6px 10px" value="${![15,25,45,60].includes(capPick)?capPick:''}" ${[15,25,45,60].includes(capPick)?'hidden':''}></div></div>
+      <label class="row small" style="gap:8px"><input type="checkbox" id="t-ex" ${s.exLast?'checked':''}> Move hard for ${s.exercise} min first</label>
+      <button class="primary" type="submit" data-action="start">Start the clock</button>
+      <div class="row small"><button type="button" class="quiet" data-action="plan" data-day="${today()}">Plan for today</button><button type="button" class="quiet" data-action="plan" data-day="${dayKey(Date.now()+DAY)}">Plan for tomorrow</button></div>
+      ${firstRun?`<p class="small muted" style="margin:0">A chime sounds when the cap hits. When self-criticism hits, tap <b>Spiraling</b> in the corner; it works whether or not a clock is running.${SR?' <b>Talk</b> runs the page by voice.':''}</p>`:''}
+      ${SR?`<button type="button" class="quiet small" data-action="voicehelp" style="align-self:flex-start;padding:4px 0">Voice commands</button>`:''}
+    </form></section>`);
+    if(queued.length){
+      parts.push(`<section><h2>Planned</h2><ul class="plain">`+queued.map(t=>`<li><span>${esc(t.title)}<br><span class="small muted">${t.planned?(t.planned===today()?'today':fmtDate(t.planned)):'no day'} · ${t.cap} min</span></span>
+        <span class="row" style="flex-wrap:nowrap"><button data-action="startq" data-id="${t.id}">Start</button><button class="quiet" data-action="drop" data-id="${t.id}" aria-label="Remove">×</button></span></li>`).join('')+`</ul></section>`);
+    }
+  }
+  // evidence strip
+  const all=S.tasks.filter(t=>t.outcome);const o=outcomes(all);
+  const n=all.length;
+  parts.push(`<section><h2>Evidence</h2><div class="card">
+    ${n?`<p style="margin:0 0 8px"><b>${o.fine} of ${n}</b> things you shipped under a cap turned out fine. ${o.minor} needed a minor fix. ${o.problem} caused a real problem.</p>
+    <div class="bar"><i style="width:${100*o.fine/n}%;background:var(--go)"></i><i style="width:${100*o.minor/n}%;background:var(--warn)"></i><i style="width:${100*o.problem/n}%;background:var(--bad)"></i></div>`
+    :`<p class="muted" style="margin:0">Nothing logged yet. Each time you ship under a cap, this page asks you the next day what actually happened. The record of what happened is the thing that loosens the fear.</p>`}
+  </div></section>`);
+  return parts.join('');
+}
+
+/* ---------- WEEK ---------- */
+function renderWeek(){
+  const now=Date.now();
+  const cur=stats(now-7*DAY,now+DAY);
+  const bStart=dayStart(S.settings.start);
+  const hasBase=now-bStart>=14*DAY;
+  const base=stats(bStart,bStart+7*DAY);
+  const tile=(n,l,b)=>`<div class="tile"><div class="n">${n}</div><div class="l">${l}</div><div class="b">${hasBase?'week one: '+b:'baseline forms after 14 days'}</div></div>`;
+  const review=S.settings.review;const daysTo=Math.ceil((dayStart(review)-now)/DAY);
+  // 8-week ship chart
+  const weeks=[];for(let i=7;i>=0;i--){const to=now-(i*7*DAY);const from=to-7*DAY;weeks.push({n:S.tasks.filter(t=>t.shipped&&t.shipped>=from&&t.shipped<to).length,label:fmtDate(dayKey(from))});}
+  const max=Math.max(1,...weeks.map(w=>w.n));
+  const W=520,H=150,L=28,B=26,bw=(W-L-8)/8;
+  let svg=`<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Shipped per week, last 8 weeks">`;
+  const top=16,floor=H-B;
+  [0,max].forEach(v=>{const y=floor-(floor-top)*(v/max);svg+=`<text x="${L-6}" y="${y+4}" font-size="11" text-anchor="end" fill="var(--muted)">${v}</text><line x1="${L}" x2="${W}" y1="${y}" y2="${y}" stroke="var(--line)" stroke-width="1"/>`;});
+  weeks.forEach((w,i)=>{const h=(floor-top)*(w.n/max);const x=L+i*bw+4;const y=floor-h;
+    svg+=`<rect x="${x}" y="${y}" width="${bw-8}" height="${h}" rx="3" fill="${i===7?'var(--go)':'var(--soft)'}" stroke="var(--line)"/>`;
+    if(w.n)svg+=`<text x="${x+(bw-8)/2}" y="${y-4}" font-size="11" text-anchor="middle" fill="var(--ink)">${w.n}</text>`;
+    svg+=`<text x="${x+(bw-8)/2}" y="${H-8}" font-size="10" text-anchor="middle" fill="var(--muted)">${esc(w.label)}</text>`;});
+  svg+='</svg>';
+  return `
+  <section><h2>Last 7 days</h2><div class="tiles">
+    ${tile(pct(cur.onDay,cur.planned),`started on the day planned (${cur.onDay}/${cur.planned})`,pct(base.onDay,base.planned))}
+    ${tile(cur.shipped,`shipped · ${pct(cur.inCap,cur.shipped)} inside the cap`,base.shipped+' shipped')}
+    ${tile(fmtMin(cur.recovery),`median time from a spiral to the next start or ship (${cur.spirals} spirals)`,fmtMin(base.recovery))}
+  </div></section>
+  <section><h2>Shipped per week</h2><div class="card">${svg}</div></section>
+  <section><h2>Review</h2><div class="card stack">
+    <p style="margin:0">${daysTo>0?`<b>${daysTo} days</b> until the three-month review on ${esc(fmtDate(review))}.`:`The review date (${esc(fmtDate(review))}) has passed. Judge by the markers above against week one, not by how this week felt.`}</p>
+    <p class="small muted" style="margin:0">Progress looks like fewer blown deadlines and faster recovery, not a sudden feeling of focus. Change the date in Setup.</p>
+    <button data-action="copy">Copy weekly check-in text</button>
+    <p class="small muted" style="margin:0">Paste it to whoever holds you accountable. The page can't send it for you.</p>
+  </div></section>`;
+}
+function checkinText(){
+  const now=Date.now();const c=stats(now-7*DAY,now+DAY);const o=c.outcomes;
+  return `Week ending ${fmtDate(today())}: started ${c.started} tasks (${c.onDay} of ${c.planned} planned ones on the day planned), shipped ${c.shipped} (${c.inCap} inside the cap). Of shipped work with a follow-up: ${o.fine} fine, ${o.minor} minor fix, ${o.problem} real problem. ${c.spirals} spirals, median recovery ${fmtMin(c.recovery)}.`;
+}
+
+/* ---------- SETUP ---------- */
+const TRIGGERS=[['deadline','A missed deadline with real consequences'],['driving','A driving incident'],['substance','A substance slip'],['mood','Two weeks of depressed mood'],['relationship','A relationship strain tied to this pattern']];
+const RISK=[['driving','I drive a lot'],['substance','Any history of substance problems'],['suicidal','Past suicidal periods'],['job','My job is unstable right now']];
+function renderSetup(){
+  const s=S.settings;
+  const anyT=TRIGGERS.some(([k])=>s.triggers[k]);const anyR=RISK.some(([k])=>s.risk[k]);
+  return `
+  <section><h2>Defaults</h2><div class="card stack">
+    <div class="row"><label class="f grow">Default time cap (min)<input type="number" id="s-cap" min="1" max="240" value="${s.cap}"></label>
+    <label class="f grow">Movement before a task (min)<input type="number" id="s-ex" min="5" max="60" value="${s.exercise}"></label></div>
+    <label class="f">Default "done means"<textarea id="s-done" rows="2">${esc(s.done)}</textarea></label>
+    <div class="row"><label class="f grow">Plan started<input type="date" id="s-start" value="${s.start}"></label>
+    <label class="f grow">Three-month review<input type="date" id="s-review" value="${s.review}"></label></div>
+  </div></section>
+  <section><h2>Reconsideration triggers</h2><div class="card ${anyT?'bad':''} stack">
+    <p class="small muted" style="margin:0">Decided in advance. Tick one when it happens; the page will keep showing it until you untick it.</p>
+    <div>${TRIGGERS.map(([k,l])=>`<label class="check"><input type="checkbox" data-trig="${k}" ${s.triggers[k]?'checked':''}><span>${l}</span></label>`).join('')}</div>
+    ${anyT?`<p style="margin:0"><b>This reopens the medication question.</b> That includes non-stimulants and occasional use, not only daily stimulants. Having the line written down is the opposite of drifting into indefinite suffering, which is the all-or-nothing pattern being treated. Book the conversation with a clinician who treats adult ADHD.</p>`:''}
+  </div></section>
+  <section><h2>Risk profile</h2><div class="card ${anyR?'warn':''} stack">
+    <p class="small muted" style="margin:0">The strongest evidence for medication is on real-world harms, not focus. It matters in proportion to these.</p>
+    <div>${RISK.map(([k,l])=>`<label class="check"><input type="checkbox" data-risk="${k}" ${s.risk[k]?'checked':''}><span>${l}</span></label>`).join('')}</div>
+    ${anyR?`<p class="small" style="margin:0">In a 2025 Swedish registry study of 148,581 people, starting ADHD medication was associated with 17% fewer suicidal behaviours, 15% less substance misuse, 12% fewer transport accidents and 13% fewer criminal convictions. Observational, but no non-drug option has anything comparable. Worth one conversation before committing to avoidance.</p>`:''}
+  </div></section>
+  <section><h2>Data</h2><div class="card stack">
+    <p class="small muted" style="margin:0">${ref?'Saved privately to your account; only you can read it.':'Saved in this browser only. Sign in on claude.ai to keep it across devices.'}</p>
+    <div class="row"><button data-action="export">Copy all data as JSON</button><button class="danger" data-action="reset">Erase everything</button></div>
+  </div></section>`;
+}
+
+/* ---------- timer, chime, wake lock ---------- */
+let timer=null,audio=null,wake=null,chimed=null;
+function chime(){
+  try{audio=audio||new (window.AudioContext||window.webkitAudioContext)();
+    const t=audio.currentTime;[0,0.35,0.7].forEach((d,i)=>{const o=audio.createOscillator(),g=audio.createGain();o.type='sine';o.frequency.value=i===2?880:660;
+      g.gain.setValueAtTime(0.0001,t+d);g.gain.exponentialRampToValueAtTime(0.25,t+d+0.02);g.gain.exponentialRampToValueAtTime(0.0001,t+d+0.3);
+      o.connect(g).connect(audio.destination);o.start(t+d);o.stop(t+d+0.32);});}catch(e){}
+}
+function primeAudio(){try{audio=audio||new (window.AudioContext||window.webkitAudioContext)();audio.resume&&audio.resume();}catch(e){}}
+async function lockScreen(on){
+  try{if(on&&!wake&&navigator.wakeLock){wake=await navigator.wakeLock.request('screen');wake.addEventListener('release',()=>{wake=null;});}
+    else if(!on&&wake){await wake.release();wake=null;}}catch(e){wake=null;}
+}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&S.active)lockScreen(true);});
+function tick(){
+  clearInterval(timer);
+  const el=$('#clock');if(!el||!S.active){document.title='Ship Anyway';lockScreen(false);return;}
+  lockScreen(true);
+  const run=()=>{
+    const a=S.active;if(!a)return clearInterval(timer);
+    if(a.pausedAt){const c=$('#clock');if(c)c.textContent='paused';document.title='Paused · Ship Anyway';return;}
+    const left=a.ends-Date.now();
+    if(a.phase==='exercise'&&left<=0){S.events.push({t:'exercise',at:Date.now(),taskId:a.taskId});a.phase='work';a.ends=Date.now()+task(a.taskId).cap*60000;a.passes=1;chime();save();return;}
+    const abs=Math.abs(left);const m=Math.floor(abs/60000),s=Math.floor(abs%60000/1000);
+    const c=$('#clock');if(!c)return clearInterval(timer);
+    const txt=(left<0?'+':'')+pad(m)+':'+pad(s);
+    c.textContent=txt;
+    document.title=(left<0?'Time is up · ':txt+' · ')+'Ship Anyway';
+    if(left<0&&!c.classList.contains('over')){if(chimed!==a.ends){chimed=a.ends;chime();}render();}
+  };
+  run();timer=setInterval(run,1000);
+}
+
+/* ---------- actions ---------- */
+let capPick=S.settings.cap;
+document.addEventListener('submit',e=>{if(e.target.id==='startform'){e.preventDefault();doStart();}});
+document.addEventListener('input',e=>{if(e.target.id==='t-custom'){const v=+e.target.value;if(v>=1&&v<=240)capPick=Math.round(v);}});
+function doStart(){
+  const now=Date.now();
+  const title=($('#t-title')?.value||'').trim()||'The thing I was avoiding';
+  const done=($('#t-done')?.value||'').trim()||S.settings.done;
+  const t={id:uid(),title,done,cap:capPick,created:now,planned:today(),started:null,shipped:null,passes:0,overtime:false,outcome:null};
+  S.tasks.push(t);
+  const ex=!!$('#t-ex')?.checked;S.settings.exLast=ex;
+  primeAudio();begin(t,ex);
+}
+document.addEventListener('click',e=>{
+  const chip=e.target.closest('.chip[data-cap]');
+  if(chip){const custom=$('#t-custom');
+    if(chip.dataset.cap==='custom'){custom.hidden=false;custom.focus();capPick=Math.max(1,Math.min(240,+custom.value||capPick));}
+    else{capPick=+chip.dataset.cap;custom.hidden=true;}
+    document.querySelectorAll('.chip[data-cap]').forEach(c=>c.setAttribute('aria-pressed',c===chip));return;}
+  const dchip=e.target.closest('.chip[data-done]');
+  if(dchip){const ta=$('#t-done');if(ta)ta.value=dchip.dataset.done;return;}
+  const b=e.target.closest('[data-action]');if(!b)return;
+  handle(b.dataset.action,b);
+});
+function handle(act,b){
+  const id=b.dataset.id,now=Date.now();
+  if(act==='start'){/* handled by the form submit */}
+  else if(act==='talk'){listen();}
+  else if(act==='plan'){
+    const title=($('#t-title')?.value||'').trim()||'The thing I was avoiding';
+    const done=($('#t-done')?.value||'').trim()||S.settings.done;
+    S.tasks.push({id:uid(),title,done,cap:capPick,created:now,planned:b.dataset.day,started:null,shipped:null,passes:0,overtime:false,outcome:null});
+    toast('Planned for '+(b.dataset.day===today()?'today':'tomorrow'));save();
+  }
+  else if(act==='startq'){const t=task(id);if(t){primeAudio();begin(t,false);}}
+  else if(act==='drop'){const t=task(id);if(t)t.dropped=true;save();}
+  else if(act==='skipex'){const a=S.active;a.phase='work';a.ends=now+task(a.taskId).cap*60000;a.passes=1;save();}
+  else if(act==='morepass'){const a=S.active;a.passes=2;a.ends=now+task(a.taskId).cap*60000;chimed=null;save();}
+  else if(act==='pause'){const a=S.active;if(a.pausedAt){a.ends+=now-a.pausedAt;a.pausedAt=null;}else{a.pausedAt=now;}save();}
+  else if(act==='ship'){const a=S.active,t=task(a.taskId);if(a.pausedAt){a.ends+=now-a.pausedAt;}t.shipped=now;t.passes=a.passes;t.overtime=now>a.ends;resolveSpiral(now);S.active=null;save();toast('Shipped. This page will ask tomorrow what happened.');}
+  else if(act==='stop'){const a=S.active,t=task(a.taskId);t.started=null;t.planned=today();S.active=null;save();}
+  else if(act==='outcome'){const t=task(id);t.outcome=b.dataset.v;t.outcomeAt=now;save();toast(b.dataset.v==='fine'?'Logged. One more data point against the fear.':'Logged. A fixable thing is not a catastrophe.');}
+  else if(act==='spiral'){S.events.push({t:'spiral',at:now,taskId:S.active?.taskId||null});save();showSpiral();}
+  else if(act==='back'){const step=($('#sp-step')?.value||'').trim();
+    if(!S.active&&step){S.tasks.push({id:uid(),title:step,done:S.settings.done,cap:15,created:now,planned:today(),started:null,shipped:null,passes:0,overtime:false,outcome:null});}
+    $('#overlay').hidden=true;$('#fab').hidden=false;save();if(!S.active&&step)toast('Added as a 15-minute task. Starting it ends the spiral clock.');}
+  else if(act==='closeov'){
+    // an accidental tap, closed within 10 s, is not a spiral
+    const last=S.events[S.events.length-1];
+    if(last&&last.t==='spiral'&&!last.recovered&&now-last.at<10000){S.events.pop();save();}
+    $('#overlay').hidden=true;$('#fab').hidden=false;}
+  else if(act==='voicehelp'){showVoiceHelp();}
+  else if(act==='copy'){copy(checkinText());}
+  else if(act==='export'){copy(JSON.stringify(S,null,2));}
+  else if(act==='reset'){
+    if(b.dataset.sure){try{localStorage.removeItem(KEY);}catch(e){}S=defaults();save();toast('Erased.');}
+    else{b.dataset.sure='1';b.textContent='Tap again to erase everything';}
+  }
+}
+
+/* ---------- voice: push-to-talk, fixed commands, no server ---------- */
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+let rec=null,listening=false;
+function speak(t){try{if(!window.speechSynthesis)return;speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.rate=1.05;speechSynthesis.speak(u);}catch(e){}}
+function listen(){
+  if(!SR){toast('Voice needs Chrome, Edge or Safari.');return;}
+  if(listening){try{rec.stop();}catch(e){}return;}
+  primeAudio();
+  rec=new SR();rec.lang=navigator.language||'en-US';rec.interimResults=false;rec.maxAlternatives=3;
+  const btn=$('#talk');
+  rec.onstart=()=>{listening=true;btn.textContent='Listening…';btn.classList.add('live');};
+  rec.onend=()=>{listening=false;btn.textContent='Talk';btn.classList.remove('live');};
+  rec.onerror=e=>{listening=false;btn.textContent='Talk';btn.classList.remove('live');
+    toast(e.error==='not-allowed'?'Microphone blocked. On the claude.ai copy of this page voice is not available; use the hosted copy.':e.error==='no-speech'?'Heard nothing.':'Voice error: '+e.error);};
+  rec.onresult=e=>{const alts=[...e.results[0]].map(r=>r.transcript.trim());let reply=null;
+    for(const a of alts){reply=command(a);if(reply!==null){toast('“'+a+'”');break;}}
+    if(reply===null){reply='I didn’t catch a command. Try: start, ship it, pause, spiraling.';toast('“'+alts[0]+'” — not a command');}
+    speak(reply);};
+  try{rec.start();}catch(e){toast('Could not start the microphone.');}
+}
+const WORDS={one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,fifteen:15,twenty:20,thirty:30,forty:40,fortyfive:45,fifty:50,sixty:60,ninety:90};
+function minutesIn(t){const m=t.match(/(\d+|[a-z]+(?:[ -][a-z]+)?)\s*(?:min|minute|minutes)\b/);if(!m)return null;const raw=m[1];
+  if(/^\d+$/.test(raw))return +raw;const parts=raw.split(/[ -]/);let n=0;for(const p of parts){if(WORDS[p]!=null)n+=WORDS[p];}return n||null;}
+function command(raw){
+  const t=raw.toLowerCase().replace(/[.,!?]/g,'').trim();
+  const a=S.active;
+  if(/^(ship( it)?|done|shipped|send it|it's done)$/.test(t)){if(!a)return 'Nothing is running.';handle('ship',{dataset:{}});return 'Shipped.';}
+  if(/^(pause|hold on|resume|unpause|continue)$/.test(t)){if(!a||a.phase!=='work')return 'Nothing to pause.';handle('pause',{dataset:{}});return a.pausedAt?'Paused.':'Running.';}
+  if(/(one )?more pass|another pass/.test(t)){if(!a)return 'Nothing is running.';if(a.passes>=2)return 'That was the last pass. Ship it.';handle('morepass',{dataset:{}});return 'Last pass. '+task(a.taskId).cap+' minutes.';}
+  if(/spiral|spiraling|i can't do this|help me|i'm stuck|im stuck/.test(t)){handle('spiral',{dataset:{}});return 'This is the pattern, not a verdict. What is the smallest next step?';}
+  if(/^(back to it|back|okay|ok|close)$/.test(t)){if(!$('#overlay').hidden){handle($('#sp-step')?'back':'closeov',{dataset:{}});return 'Back to it.';}return null;}
+  if(/^(skip|skip (the )?(movement|exercise|warm ?up))$/.test(t)){if(a&&a.phase==='exercise'){handle('skipex',{dataset:{}});return 'Clock started.';}return 'No movement timer running.';}
+  if(/^(stop|not now|cancel|quit)$/.test(t)){if(!a)return 'Nothing is running.';handle('stop',{dataset:{}});return 'Stopped. It stays in today’s plan.';}
+  if(/nothing bad|went fine|it was fine|minor fix|small fix|real problem|went badly/.test(t)){
+    const due=S.tasks.filter(x=>x.shipped&&!x.outcome&&Date.now()-x.shipped>12*3600000)[0];if(!due)return 'No check-in is waiting.';
+    const v=/nothing bad|fine/.test(t)?'fine':/minor|small/.test(t)?'minor':'problem';handle('outcome',{dataset:{id:due.id,v}});return 'Logged for '+due.title+'.';}
+  if(/^(how am i doing|status|this week|week|progress)$/.test(t)){const c=stats(Date.now()-7*DAY,Date.now()+DAY);
+    return `This week: ${c.shipped} shipped, ${c.onDay} of ${c.planned} started on the day planned, ${c.spirals} spirals. Shipped imperfect and fine: ${c.outcomes.fine}.`;}
+  if(/^(what('s| is) left|time|how long|time left)$/.test(t)){if(!a)return 'Nothing is running.';if(a.pausedAt)return 'Paused.';const left=Math.round((a.ends-Date.now())/60000);return left>=0?left+' minutes left.':'Time is up, '+(-left)+' minutes over. Ship it.';}
+  let m=t.match(/^(?:plan|add|queue)\s+(.+?)(?:\s+for\s+(today|tomorrow))?$/);
+  if(m){const day=m[2]==='tomorrow'?dayKey(Date.now()+DAY):today();const title=m[1].replace(/\s+for\s+\d+\s*min(ute)?s?$/,'');
+    S.tasks.push({id:uid(),title:cap1(title),done:S.settings.done,cap:minutesIn(t)||S.settings.cap,created:Date.now(),planned:day,started:null,shipped:null,passes:0,overtime:false,outcome:null});save();return 'Planned for '+(m[2]||'today')+'.';}
+  m=t.match(/^(?:start|begin|go)(?:\s+(?:on|with))?\s*(.*)$/);
+  if(m){if(a)return 'Something is already running. Ship it or stop it first.';
+    const mins=minutesIn(t)||capPick||S.settings.cap;const ex=/\b(move|exercise|workout|warm ?up) first\b/.test(t);
+    let title=m[1].replace(/\b(for|with)?\s*(\d+|[a-z]+(?:[ -][a-z]+)?)\s*(min|minute|minutes)\b/,'').replace(/\b(move|exercise|workout|warm ?up) first\b/,'').replace(/\s+/g,' ').trim();
+    if(!title||/^(the clock|clock|timer|a timer|the timer)$/.test(title))title='The thing I was avoiding';
+    const tk={id:uid(),title:cap1(title),done:S.settings.done,cap:Math.max(1,Math.min(240,mins)),created:Date.now(),planned:today(),started:null,shipped:null,passes:0,overtime:false,outcome:null};
+    S.tasks.push(tk);S.settings.exLast=ex;begin(tk,ex);return (ex?'Move first, then ':'')+tk.cap+' minutes on '+tk.title+'.';}
+  return null;
+}
+const cap1=s=>s.charAt(0).toUpperCase()+s.slice(1);
+function showVoiceHelp(){
+  $('#overlay').innerHTML=`<div class="card stack" role="dialog" aria-label="Voice commands">
+    <p class="quote">Tap Talk, then say one of these.</p>
+    <ul class="plain small">
+      <li><span>“Start the proposal for 45 minutes”<br><span class="muted">title and cap optional; add “move first” for the warm-up</span></span></li>
+      <li><span>“Ship it” · “Pause” · “Resume” · “One more pass” · “Stop”</span></li>
+      <li><span>“Spiraling” · then “Back to it”</span></li>
+      <li><span>“Nothing bad” · “Minor fix” · “Real problem”<br><span class="muted">answers the waiting check-in</span></span></li>
+      <li><span>“Plan the invoice for tomorrow” · “Time left” · “How am I doing”</span></li>
+    </ul>
+    <p class="small muted" style="margin:0">Runs in your browser; nothing is sent anywhere. Chrome, Edge and Safari only. Not available inside claude.ai, which blocks the microphone.</p>
+    <button class="quiet" data-action="closeov">Close</button></div>`;
+  $('#overlay').hidden=false;$('#fab').hidden=true;
+}
+function begin(t,withEx){
+  const now=Date.now();t.started=now;
+  if(!t.planned)t.planned=today();
+  resolveSpiral(now);
+  const ex=withEx?S.settings.exercise:0;
+  S.active={taskId:t.id,phase:ex?'exercise':'work',ends:now+(ex?ex:t.cap)*60000,passes:ex?0:1,startedAt:now};
+  save();
+}
+document.addEventListener('change',e=>{
+  const el=e.target,s=S.settings;
+  if(el.id==='s-cap'){s.cap=Math.max(1,Math.min(240,+el.value||25));capPick=s.cap;}
+  else if(el.id==='s-ex')s.exercise=Math.max(5,Math.min(60,+el.value||20));
+  else if(el.id==='s-done')s.done=el.value.trim()||s.done;
+  else if(el.id==='s-start'&&el.value)s.start=el.value;
+  else if(el.id==='s-review'&&el.value)s.review=el.value;
+  else if(el.dataset.trig){s.triggers[el.dataset.trig]=el.checked;}
+  else if(el.dataset.risk){s.risk[el.dataset.risk]=el.checked;}
+  else return;
+  save();
+});
+function showSpiral(){
+  const t=activeTask()||[...S.tasks].reverse().find(x=>x.shipped);
+  const all=S.tasks.filter(x=>x.outcome);const o=outcomes(all);
+  $('#overlay').innerHTML=`<div class="card stack" role="dialog" aria-label="Spiraling">
+    <p class="quote">This is the ADHD pattern, not a verdict on you.</p>
+    <p style="margin:0">People with ADHD don't set higher standards than anyone else. They judge themselves far more harshly for falling short of ordinary ones. That judgment is the thing being treated, and it's what you're feeling now.</p>
+    ${t?`<div class="done-line"><b>The standard you actually set</b>${esc(t.done)}</div>`:''}
+    ${all.length?`<p style="margin:0"><b>${o.fine} of ${all.length}</b> things you shipped imperfect turned out fine.</p>`:''}
+    <p style="margin:0">Falling short was always allowed. The next move is small on purpose.</p>
+    <label class="f">${S.active?'What is the smallest next step?':'Smallest next step (becomes a 15-minute task)'}<input type="text" id="sp-step" autocomplete="off" placeholder="Open the file. Write one bad sentence."></label>
+    <button class="primary" data-action="back">${S.active?'Back to it':'Add it and close'}</button>
+    <button class="quiet" data-action="closeov">Close</button>
+  </div>`;
+  $('#overlay').hidden=false;$('#fab').hidden=true;setTimeout(()=>$('#sp-step')?.focus(),50);
+}
+async function copy(text){
+  try{await navigator.clipboard.writeText(text);toast('Copied.');}
+  catch(e){const ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';document.body.appendChild(ta);ta.select();toast('Select and copy the text.');setTimeout(()=>ta.remove(),8000);}
+}
+let toastT=null;
+function toast(msg){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,3500);}
+if(SR)$('#talk').hidden=false;
+window.shipAnyway={command};
+render();
+})();
+</script>
+
+</body>
+</html>
