@@ -98,9 +98,6 @@ svg.chart{width:100%;height:auto;display:block;max-width:100%}
 .overlay{position:fixed;inset:0;background:rgba(10,14,18,.6);display:flex;align-items:flex-end;justify-content:center;padding:16px;z-index:20}
 .overlay .card{width:100%;max-width:560px;max-height:90%;overflow:auto}
 .quote{font-family:var(--font-display);font-weight:600;font-size:19px;line-height:1.3;text-wrap:balance;margin:0 0 10px}
-.check{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--line)}
-.check:first-of-type{border-top:none}
-.check input{margin-top:4px}
 summary{cursor:pointer;font-weight:600;padding:6px 0}
 details[open]>summary{margin-bottom:12px}
 button,a,input,summary{touch-action:manipulation}
@@ -486,11 +483,8 @@ function checkinText(){
 }
 
 /* ---------- SETUP ---------- */
-const TRIGGERS=[['deadline','A missed deadline with real consequences'],['driving','A driving incident'],['substance','A substance slip'],['mood','Two weeks of depressed mood'],['relationship','A relationship strain tied to this pattern']];
-const RISK=[['driving','I drive a lot'],['substance','Any history of substance problems'],['suicidal','Past suicidal periods'],['job','My job is unstable right now']];
 function renderSetup(){
   const s=S.settings;
-  const anyT=TRIGGERS.some(([k])=>s.triggers[k]);const anyR=RISK.some(([k])=>s.risk[k]);
   return `
   <section><h2>Defaults</h2><div class="card stack">
     <div class="row"><label class="f grow">Default time cap (min)<input type="number" id="s-cap" min="1" max="240" value="${s.cap}"></label>
@@ -527,12 +521,6 @@ function renderSetup(){
     <div class="row"><span class="grow small">Three-month review on ${esc(fmtDate(s.review))}</span>
       <a class="chip" target="_blank" rel="noopener noreferrer" href="${esc(gcal({title:'Ship Anyway: three-month review',day:s.review,at:'09:00',minutes:30,details:'Look at the Week tab against your first week, not at how this week felt.\n'+pageLink()}))}">Add to calendar</a></div>
   </div></section>
-  <details class="card"><summary>Personal support notes${anyT||anyR?' · saved selections':''}</summary>
-    <p class="small muted">Optional notes for a conversation with someone who supports you. Existing selections are kept here.</p>
-    <div>${TRIGGERS.map(([k,l])=>`<label class="check"><input type="checkbox" data-trig="${k}" ${s.triggers[k]?'checked':''}><span>${l}</span></label>`).join('')}</div>
-    <div>${RISK.map(([k,l])=>`<label class="check"><input type="checkbox" data-risk="${k}" ${s.risk[k]?'checked':''}><span>${l}</span></label>`).join('')}</div>
-    <p class="small muted">For optional exercises about perfectionism, see <a href="https://www.cci.health.wa.gov.au/Resources/Looking-After-Yourself/Perfectionism" target="_blank" rel="noopener noreferrer">CCI’s perfectionism resources</a>.</p>
-  </details>
   <section><h2>Data &amp; privacy</h2><div class="card stack">
     <p class="small muted" style="margin:0">Tasks and notes are saved in this browser only. There is no account sync. Clearing browser data removes them; download a backup to keep a copy or move devices.</p>
     <p class="small muted" style="margin:0">Voice is optional. Your browser may send audio to its speech recognition provider. Ship Anyway does not run a speech server. Browser support varies.</p>
@@ -854,8 +842,6 @@ document.addEventListener('change',e=>{
   else if(el.id==='s-review'&&el.value)s.review=el.value;
   else if(el.id==='s-checkin'&&el.value)s.checkinAt=el.value;
   else if(el.dataset.time){const t=task(el.dataset.time);if(t&&el.value)t.at=el.value;}
-  else if(el.dataset.trig){s.triggers[el.dataset.trig]=el.checked;}
-  else if(el.dataset.risk){s.risk[el.dataset.risk]=el.checked;}
   else return;
   save();
   if(['s-companion','s-sound','s-volume'].includes(el.id))document.getElementById(el.id)?.focus();
